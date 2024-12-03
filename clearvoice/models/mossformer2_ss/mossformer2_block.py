@@ -765,7 +765,7 @@ class MossformerBlock_GFSMN(nn.Module):
 
 class MossformerBlock(nn.Module):
     """
-    Mossformer Block: A module that employs a series of signle-head gated attention layers to process 
+    Mossformer Block: A module that employs a series of single-head gated attention layers to process
     sequential data. This block is designed for flexibility in feature dimension, depth, 
     and normalization techniques, making it suitable for various tasks in deep learning.
 
