@@ -4,8 +4,6 @@
 
 
 import math
-from collections import OrderedDict
-from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -13,8 +11,8 @@ import torch.nn.functional as F
 from torch.nn import init
 from torch.nn.parameter import Parameter
 
-from .espnet2.complex_utils import is_complex, new_complex_like
 from .espnet2.abs_separator import AbsSeparator
+from .espnet2.complex_utils import new_complex_like
 from .espnet2.get_layer_from_string import get_layer
 
 if hasattr(torch, "bfloat16"):
@@ -26,9 +24,10 @@ else:
 from .espnet2.stft_decoder import STFTDecoder
 from .espnet2.stft_encoder import STFTEncoder
 
-
 EPS = 1e-8
 import copy
+
+
 def _clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
@@ -80,41 +79,39 @@ class av_TFGridNetV3(AbsSeparator):
         use_builtin_complex: whether to use builtin complex type or not.
     """
 
-    def __init__(self,args):
+    def __init__(self, args):
         super().__init__()
 
-        n_fft=args.network_audio.n_fft
-        stride=args.network_audio.stride
-        window=args.network_audio.window
-        use_builtin_complex=args.network_audio.use_builtin_complex
+        n_fft = args.network_audio.n_fft
+        stride = args.network_audio.stride
+        window = args.network_audio.window
+        use_builtin_complex = args.network_audio.use_builtin_complex
         n_srcs = args.network_audio.n_srcs
-        n_imics=args.network_audio.n_imics
-        n_layers=args.network_audio.n_layers
-        lstm_hidden_units=args.network_audio.lstm_hidden_units
-        attn_n_head=args.network_audio.attn_n_head
-        attn_qk_output_channel=args.network_audio.attn_qk_output_channel
-        emb_dim=args.network_audio.emb_dim
-        emb_ks=args.network_audio.emb_ks
-        emb_hs=args.network_audio.emb_hs
-        activation=args.network_audio.activation
+        n_imics = args.network_audio.n_imics
+        n_layers = args.network_audio.n_layers
+        lstm_hidden_units = args.network_audio.lstm_hidden_units
+        attn_n_head = args.network_audio.attn_n_head
+        attn_qk_output_channel = args.network_audio.attn_qk_output_channel
+        emb_dim = args.network_audio.emb_dim
+        emb_ks = args.network_audio.emb_ks
+        emb_hs = args.network_audio.emb_hs
+        activation = args.network_audio.activation
 
-        eps=1.0e-5
-        
+        eps = 1.0e-5
+
         self.n_srcs = n_srcs
         self.n_layers = n_layers
         self.n_imics = n_imics
         assert self.n_imics == 1, self.n_imics
 
-
         assert n_fft % 2 == 0
-        n_freqs = n_fft // 2 + 1
+        n_fft // 2 + 1
         # self.ref_channel = ref_channel
 
         self.enc = STFTEncoder(
             n_fft, n_fft, stride, window=window, use_builtin_complex=use_builtin_complex
         )
         self.dec = STFTDecoder(n_fft, n_fft, stride, window=window)
-
 
         t_ksize = 3
         ks, padding = (t_ksize, 3), (t_ksize // 2, 1)
@@ -140,13 +137,12 @@ class av_TFGridNetV3(AbsSeparator):
 
         self.deconv = nn.ConvTranspose2d(emb_dim, n_srcs * 2, ks, padding=padding)
 
-
-
         # visual
-        self.av_conv = _clones(nn.Linear(emb_dim+ args.network_reference.emb_size, emb_dim),n_layers)
+        self.av_conv = _clones(
+            nn.Linear(emb_dim + args.network_reference.emb_size, emb_dim), n_layers
+        )
 
     def forward(self, input, visual):
-
 
         n_samples = input.shape[1]
         if self.n_imics == 1:
@@ -168,16 +164,15 @@ class av_TFGridNetV3(AbsSeparator):
         batch = torch.cat((batch0.real, batch0.imag), dim=1)  # [B, 2*M, T, F]
         n_batch, _, n_frames, n_freqs = batch.shape
 
-
         batch = self.conv(batch)  # [B, -1, T, F]
 
         # visual
-        visual = F.interpolate(visual, (n_frames), mode='linear')
+        visual = F.interpolate(visual, (n_frames), mode="linear")
         visual = torch.repeat_interleave(visual.unsqueeze(-1), n_freqs, -1)
 
         for ii in range(self.n_layers):
-            batch = torch.cat((visual,batch), axis=1)
-            batch = self.av_conv[ii](batch.transpose(1,3)).transpose(1,3)
+            batch = torch.cat((visual, batch), axis=1)
+            batch = self.av_conv[ii](batch.transpose(1, 3)).transpose(1, 3)
             batch = self.blocks[ii](batch)  # [B, -1, T, F]
 
         batch = self.deconv(batch)  # [B, n_srcs*2, T, F]
@@ -464,22 +459,28 @@ class VisualConv1D(nn.Module):
         conv1x1 = nn.Conv1d(V, H, 1, bias=False)
         relu = nn.ReLU()
         norm_1 = GlobalLayerNorm(H)
-        dsconv = nn.Conv1d(H, H, 3, stride=1, padding=1,dilation=1, groups=H, bias=False)
+        dsconv = nn.Conv1d(
+            H, H, 3, stride=1, padding=1, dilation=1, groups=H, bias=False
+        )
         prelu = nn.PReLU()
         norm_2 = GlobalLayerNorm(H)
         pw_conv = nn.Conv1d(H, V, 1, bias=False)
-        self.net = nn.Sequential(relu_0, norm_0, conv1x1, relu, norm_1 ,dsconv, prelu, norm_2, pw_conv)
+        self.net = nn.Sequential(
+            relu_0, norm_0, conv1x1, relu, norm_1, dsconv, prelu, norm_2, pw_conv
+        )
 
     def forward(self, x):
         out = self.net(x)
         return out + x
 
+
 class GlobalLayerNorm(nn.Module):
     """Global Layer Normalization (gLN)"""
+
     def __init__(self, channel_size):
         super(GlobalLayerNorm, self).__init__()
         self.gamma = nn.Parameter(torch.Tensor(1, channel_size, 1))  # [1, N, 1]
-        self.beta = nn.Parameter(torch.Tensor(1, channel_size,1 ))  # [1, N, 1]
+        self.beta = nn.Parameter(torch.Tensor(1, channel_size, 1))  # [1, N, 1]
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -494,7 +495,9 @@ class GlobalLayerNorm(nn.Module):
             gLN_y: [M, N, K]
         """
         # TODO: in torch 1.0, torch.mean() support dim list
-        mean = y.mean(dim=1, keepdim=True).mean(dim=2, keepdim=True) #[M, 1, 1]
-        var = (torch.pow(y-mean, 2)).mean(dim=1, keepdim=True).mean(dim=2, keepdim=True)
+        mean = y.mean(dim=1, keepdim=True).mean(dim=2, keepdim=True)  # [M, 1, 1]
+        var = (
+            (torch.pow(y - mean, 2)).mean(dim=1, keepdim=True).mean(dim=2, keepdim=True)
+        )
         gLN_y = self.gamma * (y - mean) / torch.pow(var + EPS, 0.5) + self.beta
         return gLN_y

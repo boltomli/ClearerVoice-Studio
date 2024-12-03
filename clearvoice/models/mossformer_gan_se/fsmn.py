@@ -1,8 +1,7 @@
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import torch as th
-import numpy as np
-import os
+
 
 class UniDeepFsmn(nn.Module):
     """UniDeepFsmn is a neural network module implementing a unified deep
@@ -51,7 +50,14 @@ class UniDeepFsmn(nn.Module):
         self.project = nn.Linear(hidden_size, output_dim, bias=False)
 
         # Define convolutional layer for processing output with specified filter order
-        self.conv1 = nn.Conv2d(output_dim, output_dim, [lorder + lorder - 1, 1], [1, 1], groups=output_dim, bias=False)
+        self.conv1 = nn.Conv2d(
+            output_dim,
+            output_dim,
+            [lorder + lorder - 1, 1],
+            [1, 1],
+            groups=output_dim,
+            bias=False,
+        )
 
     def forward(self, input):
         """Forward pass of the UniDeepFsmn model.

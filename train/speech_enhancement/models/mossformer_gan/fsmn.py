@@ -1,9 +1,7 @@
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import torch as th
-from torch.nn.parameter import Parameter
-import numpy as np
-import os
+
 
 class UniDeepFsmn(nn.Module):
 
@@ -23,7 +21,14 @@ class UniDeepFsmn(nn.Module):
 
         self.project = nn.Linear(hidden_size, output_dim, bias=False)
 
-        self.conv1 = nn.Conv2d(output_dim, output_dim, [lorder+lorder-1, 1], [1, 1], groups=output_dim, bias=False)
+        self.conv1 = nn.Conv2d(
+            output_dim,
+            output_dim,
+            [lorder + lorder - 1, 1],
+            [1, 1],
+            groups=output_dim,
+            bias=False,
+        )
 
     def forward(self, input):
 

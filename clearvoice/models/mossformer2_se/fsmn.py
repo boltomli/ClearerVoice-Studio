@@ -1,9 +1,7 @@
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import torch as th
-from torch.nn.parameter import Parameter
-import numpy as np
-import os
+
 
 class UniDeepFsmn(nn.Module):
     """
@@ -28,11 +26,22 @@ class UniDeepFsmn(nn.Module):
             return
         self.lorder = lorder
         self.hidden_size = hidden_size
-        
+
         # Initialize the layers
-        self.linear = nn.Linear(input_dim, hidden_size)  # Linear transformation to hidden size
-        self.project = nn.Linear(hidden_size, output_dim, bias=False)  # Project hidden size to output dimension
-        self.conv1 = nn.Conv2d(output_dim, output_dim, [lorder + lorder - 1, 1], [1, 1], groups=output_dim, bias=False)  # Convolution layer
+        self.linear = nn.Linear(
+            input_dim, hidden_size
+        )  # Linear transformation to hidden size
+        self.project = nn.Linear(
+            hidden_size, output_dim, bias=False
+        )  # Project hidden size to output dimension
+        self.conv1 = nn.Conv2d(
+            output_dim,
+            output_dim,
+            [lorder + lorder - 1, 1],
+            [1, 1],
+            groups=output_dim,
+            bias=False,
+        )  # Convolution layer
 
     def forward(self, input):
         """
@@ -44,11 +53,15 @@ class UniDeepFsmn(nn.Module):
         Returns:
             torch.Tensor: The output tensor of the same shape as input, enhanced by the network.
         """
-        f1 = F.relu(self.linear(input))  # Apply linear layer followed by ReLU activation
+        f1 = F.relu(
+            self.linear(input)
+        )  # Apply linear layer followed by ReLU activation
         p1 = self.project(f1)  # Project to output dimension
         x = th.unsqueeze(p1, 1)  # Add a dimension for compatibility with Conv2d
         x_per = x.permute(0, 3, 2, 1)  # Permute dimensions for convolution
-        y = F.pad(x_per, [0, 0, self.lorder - 1, self.lorder - 1])  # Pad for causal convolution
+        y = F.pad(
+            x_per, [0, 0, self.lorder - 1, self.lorder - 1]
+        )  # Pad for causal convolution
         out = x_per + self.conv1(y)  # Add original input to convolution output
         out1 = out.permute(0, 3, 2, 1)  # Permute back to original dimensions
         return input + out1.squeeze()  # Return enhanced input
@@ -80,12 +93,30 @@ class UniDeepFsmn_dual(nn.Module):
             return
         self.lorder = lorder
         self.hidden_size = hidden_size
-        
+
         # Initialize the layers
-        self.linear = nn.Linear(input_dim, hidden_size)  # Linear transformation to hidden size
-        self.project = nn.Linear(hidden_size, output_dim, bias=False)  # Project hidden size to output dimension
-        self.conv1 = nn.Conv2d(output_dim, output_dim, [lorder + lorder - 1, 1], [1, 1], groups=output_dim, bias=False)  # First convolution layer
-        self.conv2 = nn.Conv2d(output_dim, output_dim, [lorder + lorder - 1, 1], [1, 1], groups=output_dim // 4, bias=False)  # Second convolution layer
+        self.linear = nn.Linear(
+            input_dim, hidden_size
+        )  # Linear transformation to hidden size
+        self.project = nn.Linear(
+            hidden_size, output_dim, bias=False
+        )  # Project hidden size to output dimension
+        self.conv1 = nn.Conv2d(
+            output_dim,
+            output_dim,
+            [lorder + lorder - 1, 1],
+            [1, 1],
+            groups=output_dim,
+            bias=False,
+        )  # First convolution layer
+        self.conv2 = nn.Conv2d(
+            output_dim,
+            output_dim,
+            [lorder + lorder - 1, 1],
+            [1, 1],
+            groups=output_dim // 4,
+            bias=False,
+        )  # Second convolution layer
 
     def forward(self, input):
         """
@@ -97,13 +128,21 @@ class UniDeepFsmn_dual(nn.Module):
         Returns:
             torch.Tensor: The output tensor of the same shape as input, enhanced by the network.
         """
-        f1 = F.relu(self.linear(input))  # Apply linear layer followed by ReLU activation
+        f1 = F.relu(
+            self.linear(input)
+        )  # Apply linear layer followed by ReLU activation
         p1 = self.project(f1)  # Project to output dimension
         x = th.unsqueeze(p1, 1)  # Add a dimension for compatibility with Conv2d
         x_per = x.permute(0, 3, 2, 1)  # Permute dimensions for convolution
-        y = F.pad(x_per, [0, 0, self.lorder - 1, self.lorder - 1])  # Pad for causal convolution
-        conv1_out = x_per + self.conv1(y)  # Add original input to first convolution output
-        z = F.pad(conv1_out, [0, 0, self.lorder - 1, self.lorder - 1])  # Pad for second convolution
+        y = F.pad(
+            x_per, [0, 0, self.lorder - 1, self.lorder - 1]
+        )  # Pad for causal convolution
+        conv1_out = x_per + self.conv1(
+            y
+        )  # Add original input to first convolution output
+        z = F.pad(
+            conv1_out, [0, 0, self.lorder - 1, self.lorder - 1]
+        )  # Pad for second convolution
         out = conv1_out + self.conv2(z)  # Add output of second convolution
         out1 = out.permute(0, 3, 2, 1)  # Permute back to original dimensions
         return input + out1.squeeze()  # Return enhanced input
@@ -113,7 +152,7 @@ class DilatedDenseNet(nn.Module):
     """
     DilatedDenseNet implements a dense network structure with dilated convolutions.
 
-    This architecture enables wider receptive fields while maintaining a lower number of parameters. 
+    This architecture enables wider receptive fields while maintaining a lower number of parameters.
     It consists of multiple convolutional layers with dilation rates that increase at each layer.
 
     Attributes:
@@ -128,20 +167,41 @@ class DilatedDenseNet(nn.Module):
         super(DilatedDenseNet, self).__init__()
         self.depth = depth
         self.in_channels = in_channels
-        self.pad = nn.ConstantPad2d((1, 1, 1, 0), value=0.)  # Padding for the input
+        self.pad = nn.ConstantPad2d((1, 1, 1, 0), value=0.0)  # Padding for the input
         self.twidth = lorder * 2 - 1  # Width of the kernel
         self.kernel_size = (self.twidth, 1)  # Kernel size for convolutions
 
         # Initialize layers dynamically based on depth
         for i in range(self.depth):
-            dil = 2 ** i  # Calculate dilation rate
-            pad_length = lorder + (dil - 1) * (lorder - 1) - 1  # Calculate padding length
-            setattr(self, 'pad{}'.format(i + 1), nn.ConstantPad2d((0, 0, pad_length, pad_length), value=0.))  # Padding for dilation
-            setattr(self, 'conv{}'.format(i + 1),
-                    nn.Conv2d(self.in_channels * (i + 1), self.in_channels, kernel_size=self.kernel_size,
-                              dilation=(dil, 1), groups=self.in_channels, bias=False))  # Convolution layer with dilation
-            setattr(self, 'norm{}'.format(i + 1), nn.InstanceNorm2d(in_channels, affine=True))  # Normalization layer
-            setattr(self, 'prelu{}'.format(i + 1), nn.PReLU(self.in_channels))  # Activation layer
+            dil = 2**i  # Calculate dilation rate
+            pad_length = (
+                lorder + (dil - 1) * (lorder - 1) - 1
+            )  # Calculate padding length
+            setattr(
+                self,
+                "pad{}".format(i + 1),
+                nn.ConstantPad2d((0, 0, pad_length, pad_length), value=0.0),
+            )  # Padding for dilation
+            setattr(
+                self,
+                "conv{}".format(i + 1),
+                nn.Conv2d(
+                    self.in_channels * (i + 1),
+                    self.in_channels,
+                    kernel_size=self.kernel_size,
+                    dilation=(dil, 1),
+                    groups=self.in_channels,
+                    bias=False,
+                ),
+            )  # Convolution layer with dilation
+            setattr(
+                self,
+                "norm{}".format(i + 1),
+                nn.InstanceNorm2d(in_channels, affine=True),
+            )  # Normalization layer
+            setattr(
+                self, "prelu{}".format(i + 1), nn.PReLU(self.in_channels)
+            )  # Activation layer
 
     def forward(self, x):
         """
@@ -155,16 +215,19 @@ class DilatedDenseNet(nn.Module):
         """
         skip = x  # Initialize skip connection
         for i in range(self.depth):
-            out = getattr(self, 'pad{}'.format(i + 1))(skip)  # Apply padding
-            out = getattr(self, 'conv{}'.format(i + 1))(out)  # Apply convolution
-            out = getattr(self, 'norm{}'.format(i + 1))(out)  # Apply normalization
-            out = getattr(self, 'prelu{}'.format(i + 1))(out)  # Apply PReLU activation            
-            skip = th.cat([out, skip], dim=1)  # Concatenate the output with the skip connection
+            out = getattr(self, "pad{}".format(i + 1))(skip)  # Apply padding
+            out = getattr(self, "conv{}".format(i + 1))(out)  # Apply convolution
+            out = getattr(self, "norm{}".format(i + 1))(out)  # Apply normalization
+            out = getattr(self, "prelu{}".format(i + 1))(out)  # Apply PReLU activation
+            skip = th.cat(
+                [out, skip], dim=1
+            )  # Concatenate the output with the skip connection
         return out  # Return the final output
+
 
 class UniDeepFsmn_dilated(nn.Module):
     """
-    UniDeepFsmn_dilated combines the UniDeepFsmn architecture with a dilated dense network 
+    UniDeepFsmn_dilated combines the UniDeepFsmn architecture with a dilated dense network
     to enhance feature extraction while maintaining efficient computation.
 
     Attributes:
@@ -188,11 +251,17 @@ class UniDeepFsmn_dilated(nn.Module):
             return
         self.lorder = lorder
         self.hidden_size = hidden_size
-        
+
         # Initialize layers
-        self.linear = nn.Linear(input_dim, hidden_size)  # Linear transformation to hidden size
-        self.project = nn.Linear(hidden_size, output_dim, bias=False)  # Project hidden size to output dimension
-        self.conv = DilatedDenseNet(depth=self.depth, lorder=lorder, in_channels=output_dim)  # Dilated dense network for feature extraction
+        self.linear = nn.Linear(
+            input_dim, hidden_size
+        )  # Linear transformation to hidden size
+        self.project = nn.Linear(
+            hidden_size, output_dim, bias=False
+        )  # Project hidden size to output dimension
+        self.conv = DilatedDenseNet(
+            depth=self.depth, lorder=lorder, in_channels=output_dim
+        )  # Dilated dense network for feature extraction
 
     def forward(self, input):
         """
@@ -204,7 +273,9 @@ class UniDeepFsmn_dilated(nn.Module):
         Returns:
             torch.Tensor: The output tensor of the same shape as input, enhanced by the network.
         """
-        f1 = F.relu(self.linear(input))  # Apply linear layer followed by ReLU activation
+        f1 = F.relu(
+            self.linear(input)
+        )  # Apply linear layer followed by ReLU activation
         p1 = self.project(f1)  # Project to output dimension
         x = th.unsqueeze(p1, 1)  # Add a dimension for compatibility with Conv2d
         x_per = x.permute(0, 3, 2, 1)  # Permute dimensions for convolution

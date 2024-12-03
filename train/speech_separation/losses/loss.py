@@ -3,15 +3,15 @@ Losses for training neural networks.
 Based on speechbrain: https://github.com/speechbrain/speechbrain
 """
 
-import math
-import torch
-import logging
 import functools
-import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
+import logging
+import math
 from itertools import permutations
 
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ def loss_mossformer2_ss(args, inputs, labels, Out_List, device):
     estimates = torch.stack(Out_List, dim=2)
     loss_sisnr = get_si_snr_with_pitwrapper(labels, estimates)
     return loss_sisnr
+
 
 def transducer_loss(
     log_probs,
@@ -57,7 +58,9 @@ def transducer_loss(
         try:
             from torchaudio.functional import rnnt_loss
         except ImportError:
-            err_msg = "The dependency torchaudio >= 0.10.0 is needed to use Transducer Loss\n"
+            err_msg = (
+                "The dependency torchaudio >= 0.10.0 is needed to use Transducer Loss\n"
+            )
             err_msg += "Cannot import torchaudio.functional.rnnt_loss.\n"
             err_msg += "To use it, please install torchaudio >= 0.10.0\n"
             err_msg += "==================\n"
@@ -76,7 +79,12 @@ def transducer_loss(
         from speechbrain.nnet.loss.transducer_loss import Transducer
 
         return Transducer.apply(
-            log_probs, targets, input_lens, target_lens, blank_index, reduction,
+            log_probs,
+            targets,
+            input_lens,
+            target_lens,
+            blank_index,
+            reduction,
         )
 
 
@@ -207,25 +215,25 @@ class PitWrapper(nn.Module):
 
     def forward(self, preds, targets):
         """
-            Arguments
-            ---------
-            preds : torch.Tensor
-                Network predictions tensor, of shape
-                [batch, channels, ..., sources].
-            targets : torch.Tensor
-                Target tensor, of shape [batch, channels, ..., sources].
+        Arguments
+        ---------
+        preds : torch.Tensor
+            Network predictions tensor, of shape
+            [batch, channels, ..., sources].
+        targets : torch.Tensor
+            Target tensor, of shape [batch, channels, ..., sources].
 
-            Returns
-            -------
-            loss : torch.Tensor
-                Permutation invariant loss for current examples, tensor of
-                shape [batch]
+        Returns
+        -------
+        loss : torch.Tensor
+            Permutation invariant loss for current examples, tensor of
+            shape [batch]
 
-            perms : list
-                List of indexes for optimal permutation of the inputs over
-                sources.
-                e.g., [(0, 1, 2), (2, 1, 0)] for three sources and 2 examples
-                per batch.
+        perms : list
+            List of indexes for optimal permutation of the inputs over
+            sources.
+            e.g., [(0, 1, 2), (2, 1, 0)] for three sources and 2 examples
+            per batch.
         """
         losses = []
         perms = []
@@ -289,9 +297,7 @@ def ctc_loss(
         return loss
 
 
-def l1_loss(
-    predictions, targets, length=None, allowed_len_diff=3, reduction="mean"
-):
+def l1_loss(predictions, targets, length=None, allowed_len_diff=3, reduction="mean"):
     """Compute the true l1 loss, accounting for length differences.
 
     Arguments
@@ -317,14 +323,10 @@ def l1_loss(
     """
     predictions, targets = truncate(predictions, targets, allowed_len_diff)
     loss = functools.partial(torch.nn.functional.l1_loss, reduction="none")
-    return compute_masked_loss(
-        loss, predictions, targets, length, reduction=reduction
-    )
+    return compute_masked_loss(loss, predictions, targets, length, reduction=reduction)
 
 
-def mse_loss(
-    predictions, targets, length=None, allowed_len_diff=3, reduction="mean"
-):
+def mse_loss(predictions, targets, length=None, allowed_len_diff=3, reduction="mean"):
     """Compute the true mean squared error, accounting for length differences.
 
     Arguments
@@ -350,9 +352,7 @@ def mse_loss(
     """
     predictions, targets = truncate(predictions, targets, allowed_len_diff)
     loss = functools.partial(torch.nn.functional.mse_loss, reduction="none")
-    return compute_masked_loss(
-        loss, predictions, targets, length, reduction=reduction
-    )
+    return compute_masked_loss(loss, predictions, targets, length, reduction=reduction)
 
 
 def classification_error(
@@ -383,9 +383,7 @@ def classification_error(
     tensor(0.5000)
     """
     if len(probabilities.shape) == 3 and len(targets.shape) == 2:
-        probabilities, targets = truncate(
-            probabilities, targets, allowed_len_diff
-        )
+        probabilities, targets = truncate(probabilities, targets, allowed_len_diff)
 
     def error(predictions, targets):
         predictions = torch.argmax(probabilities, dim=-1)
@@ -648,7 +646,8 @@ def compute_masked_loss(
     mask = torch.ones_like(targets)
     if length is not None:
         length_mask = length_to_mask(
-            length * targets.shape[1], max_len=targets.shape[1],
+            length * targets.shape[1],
+            max_len=targets.shape[1],
         )
 
         # Handle any dimensionality of input
@@ -744,13 +743,9 @@ def cal_si_snr(source, estimate_source):
     mask = get_mask(source, source_lengths)
     estimate_source *= mask
 
-    num_samples = (
-        source_lengths.contiguous().reshape(1, -1, 1).float()
-    )  # [1, B, 1]
+    num_samples = source_lengths.contiguous().reshape(1, -1, 1).float()  # [1, B, 1]
     mean_target = torch.sum(source, dim=0, keepdim=True) / num_samples
-    mean_estimate = (
-        torch.sum(estimate_source, dim=0, keepdim=True) / num_samples
-    )
+    mean_estimate = torch.sum(estimate_source, dim=0, keepdim=True) / num_samples
     zero_mean_target = source - mean_target
     zero_mean_estimate = estimate_source - mean_estimate
     # mask padding position along T
@@ -763,22 +758,18 @@ def cal_si_snr(source, estimate_source):
     s_estimate = zero_mean_estimate  # [T, B, C]
     # s_target = <s', s>s / ||s||^2
     dot = torch.sum(s_estimate * s_target, dim=0, keepdim=True)  # [1, B, C]
-    s_target_energy = (
-        torch.sum(s_target ** 2, dim=0, keepdim=True) + EPS
-    )  # [1, B, C]
+    s_target_energy = torch.sum(s_target**2, dim=0, keepdim=True) + EPS  # [1, B, C]
     proj = dot * s_target / s_target_energy  # [T, B, C]
     # e_noise = s' - s_target
     e_noise = s_estimate - proj  # [T, B, C]
     # SI-SNR = 10 * log_10(||s_target||^2 / ||e_noise||^2)
-    #print('proj power: {}'.format(torch.sum(proj ** 2, dim=0)))
-    #print('e_noise power: {}'.format(torch.sum(e_noise ** 2, dim=0)))
-    si_snr_beforelog = torch.sum(proj ** 2, dim=0) / (
-        torch.sum(e_noise ** 2, dim=0) + EPS
-    )
+    # print('proj power: {}'.format(torch.sum(proj ** 2, dim=0)))
+    # print('e_noise power: {}'.format(torch.sum(e_noise ** 2, dim=0)))
+    si_snr_beforelog = torch.sum(proj**2, dim=0) / (torch.sum(e_noise**2, dim=0) + EPS)
     si_snr = 10 * torch.log10(si_snr_beforelog + EPS)  # [B, C]
-    #print('si_snr: {}'.format(si_snr))
+    # print('si_snr: {}'.format(si_snr))
 
-    #si_snr[si_snr>=80.0]  = 0.0
+    # si_snr[si_snr>=80.0]  = 0.0
     return -si_snr.unsqueeze(0)
 
 
@@ -1076,7 +1067,9 @@ def ce_kd(inp, target):
 
 
 def nll_loss_kd(
-    probabilities, targets, rel_lab_lengths,
+    probabilities,
+    targets,
+    rel_lab_lengths,
 ):
     """Knowledge distillation for negative log-likelihood loss.
 

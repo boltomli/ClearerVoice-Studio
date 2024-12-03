@@ -1,20 +1,17 @@
 import math
-from collections import OrderedDict
-from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from models.mossformer_gan_se.conv_module import ConvModule
+from models.mossformer_gan_se.discriminator import Discriminator
+from models.mossformer_gan_se.fsmn import UniDeepFsmn
+from models.mossformer_gan_se.get_layer_from_string import get_layer
+from models.mossformer_gan_se.mossformer import MossFormer
+from models.mossformer_gan_se.se_layer import SELayer
 from packaging.version import parse as V
 from torch.nn import init
 from torch.nn.parameter import Parameter
-
-from models.mossformer_gan_se.fsmn import UniDeepFsmn
-from models.mossformer_gan_se.conv_module import ConvModule
-from models.mossformer_gan_se.mossformer import MossFormer
-from models.mossformer_gan_se.se_layer import SELayer
-from models.mossformer_gan_se.get_layer_from_string import get_layer
-from models.mossformer_gan_se.discriminator import Discriminator
 
 # Check if the installed version of PyTorch is 1.9.0 or higher
 is_torch_1_9_plus = V(torch.__version__) >= V("1.9.0")
@@ -24,24 +21,24 @@ class MossFormerGAN_SE_16K(nn.Module):
     """
     MossFormerGAN_SE_16K: A GAN-based speech enhancement model for 16kHz input audio.
 
-    This model integrates a synchronous attention network (SyncANet) for 
-    feature extraction. Depending on the mode (train or inference), it may 
+    This model integrates a synchronous attention network (SyncANet) for
+    feature extraction. Depending on the mode (train or inference), it may
     also include a discriminator for adversarial training.
 
     Args:
-        args (Namespace): Arguments containing configuration parameters, 
+        args (Namespace): Arguments containing configuration parameters,
                           including 'fft_len' and 'mode'.
     """
 
     def __init__(self, args):
         """Initializes the MossFormerGAN_SE_16K model."""
         super(MossFormerGAN_SE_16K, self).__init__()
-        
+
         # Initialize SyncANet with specified number of channels and features
         self.model = SyncANet(num_channel=64, num_features=args.fft_len // 2 + 1)
 
         # Initialize discriminator if in training mode
-        if args.mode == 'train':
+        if args.mode == "train":
             self.discriminator = Discriminator(ndf=16)
         else:
             self.discriminator = None
@@ -56,13 +53,15 @@ class MossFormerGAN_SE_16K(nn.Module):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Output tensors representing the real and imaginary parts.
         """
-        output_real, output_imag = self.model(x)  # Get real and imaginary outputs from the model
+        output_real, output_imag = self.model(
+            x
+        )  # Get real and imaginary outputs from the model
         return output_real, output_imag  # Return the outputs
 
 
 class FSMN_Wrap(nn.Module):
     """
-    FSMN_Wrap: A wrapper around the UniDeepFsmn module to facilitate 
+    FSMN_Wrap: A wrapper around the UniDeepFsmn module to facilitate
     integration into the larger model architecture.
 
     Args:
@@ -104,6 +103,7 @@ class FSMN_Wrap(nn.Module):
 
         return output.permute(0, 3, 1, 2)  # Final output shape: [b, c, h, T]
 
+
 class DilatedDenseNet(nn.Module):
     """
     DilatedDenseNet: A dilated dense network for feature extraction.
@@ -121,21 +121,51 @@ class DilatedDenseNet(nn.Module):
         super(DilatedDenseNet, self).__init__()
         self.depth = depth
         self.in_channels = in_channels
-        self.pad = nn.ConstantPad2d((1, 1, 1, 0), value=0.)  # Padding for the first layer
+        self.pad = nn.ConstantPad2d(
+            (1, 1, 1, 0), value=0.0
+        )  # Padding for the first layer
         self.twidth = 2  # Temporal width for convolutions
         self.kernel_size = (self.twidth, 3)  # Kernel size for convolutions
 
         # Initialize dilated convolutions, padding, normalization, and FSMN for each layer
         for i in range(self.depth):
-            dil = 2 ** i  # Dilation factor for the current layer
-            pad_length = self.twidth + (dil - 1) * (self.twidth - 1) - 1  # Calculate padding length
-            setattr(self, 'pad{}'.format(i + 1), nn.ConstantPad2d((1, 1, pad_length, 0), value=0.))
-            setattr(self, 'conv{}'.format(i + 1),
-                    nn.Conv2d(self.in_channels * (i + 1), self.in_channels, kernel_size=self.kernel_size,
-                              dilation=(dil, 1)))  # Convolution layer
-            setattr(self, 'norm{}'.format(i + 1), nn.InstanceNorm2d(in_channels, affine=True))  # Normalization
-            setattr(self, 'prelu{}'.format(i + 1), nn.PReLU(self.in_channels))  # Activation function
-            setattr(self, 'fsmn{}'.format(i + 1), FSMN_Wrap(nIn=self.in_channels, nHidden=self.in_channels, lorder=5, nOut=self.in_channels))
+            dil = 2**i  # Dilation factor for the current layer
+            pad_length = (
+                self.twidth + (dil - 1) * (self.twidth - 1) - 1
+            )  # Calculate padding length
+            setattr(
+                self,
+                "pad{}".format(i + 1),
+                nn.ConstantPad2d((1, 1, pad_length, 0), value=0.0),
+            )
+            setattr(
+                self,
+                "conv{}".format(i + 1),
+                nn.Conv2d(
+                    self.in_channels * (i + 1),
+                    self.in_channels,
+                    kernel_size=self.kernel_size,
+                    dilation=(dil, 1),
+                ),
+            )  # Convolution layer
+            setattr(
+                self,
+                "norm{}".format(i + 1),
+                nn.InstanceNorm2d(in_channels, affine=True),
+            )  # Normalization
+            setattr(
+                self, "prelu{}".format(i + 1), nn.PReLU(self.in_channels)
+            )  # Activation function
+            setattr(
+                self,
+                "fsmn{}".format(i + 1),
+                FSMN_Wrap(
+                    nIn=self.in_channels,
+                    nHidden=self.in_channels,
+                    lorder=5,
+                    nOut=self.in_channels,
+                ),
+            )
 
     def forward(self, x):
         """
@@ -150,12 +180,14 @@ class DilatedDenseNet(nn.Module):
         skip = x  # Initialize skip connection with input
         for i in range(self.depth):
             # Apply padding, convolution, normalization, activation, and FSMN in sequence
-            out = getattr(self, 'pad{}'.format(i + 1))(skip)
-            out = getattr(self, 'conv{}'.format(i + 1))(out)
-            out = getattr(self, 'norm{}'.format(i + 1))(out)
-            out = getattr(self, 'prelu{}'.format(i + 1))(out)
-            out = getattr(self, 'fsmn{}'.format(i + 1))(out)
-            skip = torch.cat([out, skip], dim=1)  # Concatenate outputs for dense connectivity
+            out = getattr(self, "pad{}".format(i + 1))(skip)
+            out = getattr(self, "conv{}".format(i + 1))(out)
+            out = getattr(self, "norm{}".format(i + 1))(out)
+            out = getattr(self, "prelu{}".format(i + 1))(out)
+            out = getattr(self, "fsmn{}".format(i + 1))(out)
+            skip = torch.cat(
+                [out, skip], dim=1
+            )  # Concatenate outputs for dense connectivity
         return out  # Return the final output
 
 
@@ -163,7 +195,7 @@ class DenseEncoder(nn.Module):
     """
     DenseEncoder: A dense encoding module for feature extraction from input data.
 
-    This module consists of a series of convolutional layers followed by a 
+    This module consists of a series of convolutional layers followed by a
     dilated dense network for robust feature learning.
 
     Args:
@@ -175,15 +207,21 @@ class DenseEncoder(nn.Module):
         """Initializes the DenseEncoder with specified input channels and feature size."""
         super(DenseEncoder, self).__init__()
         self.conv_1 = nn.Sequential(
-            nn.Conv2d(in_channel, channels, (1, 1), (1, 1)),  # Initial convolution layer
+            nn.Conv2d(
+                in_channel, channels, (1, 1), (1, 1)
+            ),  # Initial convolution layer
             nn.InstanceNorm2d(channels, affine=True),  # Normalization layer
-            nn.PReLU(channels)  # Activation function
+            nn.PReLU(channels),  # Activation function
         )
-        self.dilated_dense = DilatedDenseNet(depth=4, in_channels=channels)  # Dilated Dense Network
+        self.dilated_dense = DilatedDenseNet(
+            depth=4, in_channels=channels
+        )  # Dilated Dense Network
         self.conv_2 = nn.Sequential(
-            nn.Conv2d(channels, channels, (1, 3), (1, 2), padding=(0, 1)),  # Second convolution layer
+            nn.Conv2d(
+                channels, channels, (1, 3), (1, 2), padding=(0, 1)
+            ),  # Second convolution layer
             nn.InstanceNorm2d(channels, affine=True),  # Normalization layer
-            nn.PReLU(channels)  # Activation function
+            nn.PReLU(channels),  # Activation function
         )
 
     def forward(self, x):
@@ -219,9 +257,11 @@ class SPConvTranspose2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, r=1):
         """Initializes the SPConvTranspose2d with specified parameters."""
         super(SPConvTranspose2d, self).__init__()
-        self.pad1 = nn.ConstantPad2d((1, 1, 0, 0), value=0.)  # Padding for input
+        self.pad1 = nn.ConstantPad2d((1, 1, 0, 0), value=0.0)  # Padding for input
         self.out_channels = out_channels  # Store number of output channels
-        self.conv = nn.Conv2d(in_channels, out_channels * r, kernel_size=kernel_size, stride=(1, 1))  # Convolution layer
+        self.conv = nn.Conv2d(
+            in_channels, out_channels * r, kernel_size=kernel_size, stride=(1, 1)
+        )  # Convolution layer
         self.r = r  # Store the upsampling rate
 
     def forward(self, x):
@@ -237,17 +277,22 @@ class SPConvTranspose2d(nn.Module):
         x = self.pad1(x)  # Apply padding to input
         out = self.conv(x)  # Perform convolution operation
         batch_size, nchannels, H, W = out.shape  # Get output shape
-        out = out.view((batch_size, self.r, nchannels // self.r, H, W))  # Reshape output for separation
+        out = out.view(
+            (batch_size, self.r, nchannels // self.r, H, W)
+        )  # Reshape output for separation
         out = out.permute(0, 2, 3, 4, 1)  # Rearrange dimensions
-        out = out.contiguous().view((batch_size, nchannels // self.r, H, -1))  # Final output shape
+        out = out.contiguous().view(
+            (batch_size, nchannels // self.r, H, -1)
+        )  # Final output shape
         return out  # Return the final output
+
 
 class MaskDecoder(nn.Module):
     """
     MaskDecoder: A decoder module for estimating masks used in audio processing.
 
-    This module utilizes a dilated dense network to capture features and 
-    applies sub-pixel convolution to upscale the output. It produces 
+    This module utilizes a dilated dense network to capture features and
+    applies sub-pixel convolution to upscale the output. It produces
     a mask that can be applied to the magnitude of audio signals.
 
     Args:
@@ -259,13 +304,23 @@ class MaskDecoder(nn.Module):
     def __init__(self, num_features, num_channel=64, out_channel=1):
         """Initializes the MaskDecoder with specified parameters."""
         super(MaskDecoder, self).__init__()
-        self.dense_block = DilatedDenseNet(depth=4, in_channels=num_channel)  # Dense feature extraction
-        self.sub_pixel = SPConvTranspose2d(num_channel, num_channel, (1, 3), 2)  # Sub-pixel convolution for upsampling
-        self.conv_1 = nn.Conv2d(num_channel, out_channel, (1, 2))  # Convolution layer to produce mask
+        self.dense_block = DilatedDenseNet(
+            depth=4, in_channels=num_channel
+        )  # Dense feature extraction
+        self.sub_pixel = SPConvTranspose2d(
+            num_channel, num_channel, (1, 3), 2
+        )  # Sub-pixel convolution for upsampling
+        self.conv_1 = nn.Conv2d(
+            num_channel, out_channel, (1, 2)
+        )  # Convolution layer to produce mask
         self.norm = nn.InstanceNorm2d(out_channel, affine=True)  # Normalization layer
         self.prelu = nn.PReLU(out_channel)  # Activation function
-        self.final_conv = nn.Conv2d(out_channel, out_channel, (1, 1))  # Final convolution layer
-        self.prelu_out = nn.PReLU(num_features, init=-0.25)  # Final activation for output mask
+        self.final_conv = nn.Conv2d(
+            out_channel, out_channel, (1, 1)
+        )  # Final convolution layer
+        self.prelu_out = nn.PReLU(
+            num_features, init=-0.25
+        )  # Final activation for output mask
 
     def forward(self, x):
         """
@@ -281,7 +336,9 @@ class MaskDecoder(nn.Module):
         x = self.sub_pixel(x)  # Upsample the features
         x = self.conv_1(x)  # Convolution to estimate the mask
         x = self.prelu(self.norm(x))  # Apply normalization and activation
-        x = self.final_conv(x).permute(0, 3, 2, 1).squeeze(-1)  # Final convolution and rearrangement
+        x = (
+            self.final_conv(x).permute(0, 3, 2, 1).squeeze(-1)
+        )  # Final convolution and rearrangement
         return self.prelu_out(x).permute(0, 2, 1).unsqueeze(1)  # Final output shape
 
 
@@ -289,8 +346,8 @@ class ComplexDecoder(nn.Module):
     """
     ComplexDecoder: A decoder module for estimating complex-valued outputs.
 
-    This module processes features through a dilated dense network and a 
-    sub-pixel convolution layer to generate two output channels representing 
+    This module processes features through a dilated dense network and a
+    sub-pixel convolution layer to generate two output channels representing
     the real and imaginary parts of the complex output.
 
     Args:
@@ -300,11 +357,17 @@ class ComplexDecoder(nn.Module):
     def __init__(self, num_channel=64):
         """Initializes the ComplexDecoder with specified parameters."""
         super(ComplexDecoder, self).__init__()
-        self.dense_block = DilatedDenseNet(depth=4, in_channels=num_channel)  # Dense feature extraction
-        self.sub_pixel = SPConvTranspose2d(num_channel, num_channel, (1, 3), 2)  # Sub-pixel convolution for upsampling
+        self.dense_block = DilatedDenseNet(
+            depth=4, in_channels=num_channel
+        )  # Dense feature extraction
+        self.sub_pixel = SPConvTranspose2d(
+            num_channel, num_channel, (1, 3), 2
+        )  # Sub-pixel convolution for upsampling
         self.prelu = nn.PReLU(num_channel)  # Activation function
         self.norm = nn.InstanceNorm2d(num_channel, affine=True)  # Normalization layer
-        self.conv = nn.Conv2d(num_channel, 2, (1, 2))  # Convolution layer to produce complex outputs
+        self.conv = nn.Conv2d(
+            num_channel, 2, (1, 2)
+        )  # Convolution layer to produce complex outputs
 
     def forward(self, x):
         """
@@ -327,7 +390,7 @@ class SyncANet(nn.Module):
     """
     SyncANet: A synchronous audio processing network for separating audio signals.
 
-    This network integrates dense encoding, synchronous attention blocks, 
+    This network integrates dense encoding, synchronous attention blocks,
     and separate decoders for estimating masks and complex-valued outputs.
 
     Args:
@@ -338,10 +401,12 @@ class SyncANet(nn.Module):
     def __init__(self, num_channel=64, num_features=201):
         """Initializes the SyncANet with specified parameters."""
         super(SyncANet, self).__init__()
-        self.dense_encoder = DenseEncoder(in_channel=3, channels=num_channel)  # Dense encoder for input
+        self.dense_encoder = DenseEncoder(
+            in_channel=3, channels=num_channel
+        )  # Dense encoder for input
         self.n_layers = 6  # Number of synchronous attention layers
         self.blocks = nn.ModuleList([])  # List to hold attention blocks
-        
+
         # Initialize attention blocks
         for _ in range(self.n_layers):
             self.blocks.append(
@@ -349,17 +414,21 @@ class SyncANet(nn.Module):
                     emb_dim=num_channel,
                     emb_ks=2,
                     emb_hs=1,
-                    n_freqs=int(num_features//2)+1,
-                    hidden_channels=num_channel*2,
+                    n_freqs=int(num_features // 2) + 1,
+                    hidden_channels=num_channel * 2,
                     n_head=4,
                     approx_qk_dim=512,
-                    activation='prelu',
+                    activation="prelu",
                     eps=1.0e-5,
                 )
             )
 
-        self.mask_decoder = MaskDecoder(num_features, num_channel=num_channel, out_channel=1)  # Mask decoder
-        self.complex_decoder = ComplexDecoder(num_channel=num_channel)  # Complex decoder
+        self.mask_decoder = MaskDecoder(
+            num_features, num_channel=num_channel, out_channel=1
+        )  # Mask decoder
+        self.complex_decoder = ComplexDecoder(
+            num_channel=num_channel
+        )  # Complex decoder
 
     def forward(self, x):
         """
@@ -372,9 +441,17 @@ class SyncANet(nn.Module):
             list: List containing the real and imaginary parts of the output tensor.
         """
         out_list = []  # List to store outputs
-        mag = torch.sqrt(x[:, 0, :, :]**2 + x[:, 1, :, :]**2).unsqueeze(1)  # Calculate magnitude
-        noisy_phase = torch.angle(torch.complex(x[:, 0, :, :], x[:, 1, :, :])).unsqueeze(1)  # Calculate phase
-        x_in = torch.cat([mag, x], dim=1)  # Concatenate magnitude and input for processing
+        mag = torch.sqrt(x[:, 0, :, :] ** 2 + x[:, 1, :, :] ** 2).unsqueeze(
+            1
+        )  # Calculate magnitude
+        noisy_phase = torch.angle(
+            torch.complex(x[:, 0, :, :], x[:, 1, :, :])
+        ).unsqueeze(
+            1
+        )  # Calculate phase
+        x_in = torch.cat(
+            [mag, x], dim=1
+        )  # Concatenate magnitude and input for processing
 
         x = self.dense_encoder(x_in)  # Feature extraction using dense encoder
         for ii in range(self.n_layers):
@@ -386,20 +463,25 @@ class SyncANet(nn.Module):
         complex_out = self.complex_decoder(x)  # Generate complex output
         mag_real = out_mag * torch.cos(noisy_phase)  # Real part of the output
         mag_imag = out_mag * torch.sin(noisy_phase)  # Imaginary part of the output
-        final_real = mag_real + complex_out[:, 0, :, :].unsqueeze(1)  # Final real output
-        final_imag = mag_imag + complex_out[:, 1, :, :].unsqueeze(1)  # Final imaginary output
+        final_real = mag_real + complex_out[:, 0, :, :].unsqueeze(
+            1
+        )  # Final real output
+        final_imag = mag_imag + complex_out[:, 1, :, :].unsqueeze(
+            1
+        )  # Final imaginary output
         out_list.append(final_real)  # Append real output to list
         out_list.append(final_imag)  # Append imaginary output to list
 
         return out_list  # Return list of outputs
 
+
 class FFConvM(nn.Module):
     """
-    FFConvM: A feedforward convolutional module combining linear layers, normalization, 
+    FFConvM: A feedforward convolutional module combining linear layers, normalization,
     non-linear activation, and convolution operations.
 
-    This module processes input tensors through a sequence of transformations, including 
-    normalization, a linear layer with a SiLU activation, a convolutional operation, and 
+    This module processes input tensors through a sequence of transformations, including
+    normalization, a linear layer with a SiLU activation, a convolutional operation, and
     dropout for regularization.
 
     Args:
@@ -409,23 +491,17 @@ class FFConvM(nn.Module):
         dropout (float): The dropout probability for regularization (default is 0.1).
     """
 
-    def __init__(
-        self,
-        dim_in,
-        dim_out,
-        norm_klass=nn.LayerNorm,
-        dropout=0.1
-    ):
+    def __init__(self, dim_in, dim_out, norm_klass=nn.LayerNorm, dropout=0.1):
         """Initializes the FFConvM with specified parameters."""
         super().__init__()
-        
+
         # Define the sequential model
         self.mdl = nn.Sequential(
             norm_klass(dim_in),  # Apply normalization to input
             nn.Linear(dim_in, dim_out),  # Linear transformation to dim_out
             nn.SiLU(),  # Non-linear activation using SiLU (Sigmoid Linear Unit)
             ConvModule(dim_out),  # Convolution operation on the output
-            nn.Dropout(dropout)  # Dropout layer for regularization
+            nn.Dropout(dropout),  # Dropout layer for regularization
         )
 
     def forward(self, x):
@@ -441,11 +517,12 @@ class FFConvM(nn.Module):
         output = self.mdl(x)  # Pass input through the sequential model
         return output  # Return the processed output
 
+
 class SyncANetBlock(nn.Module):
     """
     SyncANetBlock implements a modified version of the MossFormer (GatedFormer) module,
-    inspired by the TF-GridNet architecture (https://arxiv.org/abs/2211.12433). 
-    It combines gated triple-attention schemes and Finite Short Memory Network (FSMN) modules 
+    inspired by the TF-GridNet architecture (https://arxiv.org/abs/2211.12433).
+    It combines gated triple-attention schemes and Finite Short Memory Network (FSMN) modules
     to enhance computational efficiency and overall performance in audio processing tasks.
 
     Attributes:
@@ -459,14 +536,14 @@ class SyncANetBlock(nn.Module):
         activation (str): Activation function to use.
         eps (float): Small value to avoid division by zero in normalization layers.
     """
-    
+
     def __getitem__(self, key):
-        """ 
+        """
         Allows accessing module attributes using indexing.
-        
+
         Args:
             key: Attribute name to retrieve.
-        
+
         Returns:
             The requested attribute.
         """
@@ -503,7 +580,9 @@ class SyncANetBlock(nn.Module):
         in_channels = emb_dim * emb_ks  # Calculate the number of input channels
 
         ## Intra modules: Modules for internal processing within the block
-        self.Fconv = nn.Conv2d(emb_dim, in_channels, kernel_size=(1, emb_ks), stride=(1, 1), groups=emb_dim)
+        self.Fconv = nn.Conv2d(
+            emb_dim, in_channels, kernel_size=(1, emb_ks), stride=(1, 1), groups=emb_dim
+        )
         self.intra_norm = LayerNormalization4D(emb_dim, eps=eps)  # Layer normalization
         self.intra_to_u = FFConvM(
             dim_in=in_channels,
@@ -517,14 +596,20 @@ class SyncANetBlock(nn.Module):
             norm_klass=nn.LayerNorm,
             dropout=0.1,
         )
-        self.intra_rnn = self._build_repeats(in_channels, hidden_channels, 20, hidden_channels, repeats=1)  # FSMN layers
-        self.intra_mossformer = MossFormer(dim=emb_dim, group_size=n_freqs)  # MossFormer module
+        self.intra_rnn = self._build_repeats(
+            in_channels, hidden_channels, 20, hidden_channels, repeats=1
+        )  # FSMN layers
+        self.intra_mossformer = MossFormer(
+            dim=emb_dim, group_size=n_freqs
+        )  # MossFormer module
 
         # Linear transformation for intra module output
         self.intra_linear = nn.ConvTranspose1d(
             hidden_channels, emb_dim, emb_ks, stride=emb_hs
         )
-        self.intra_se = SELayer(channel=emb_dim, reduction=1)  # Squeeze-and-excitation layer
+        self.intra_se = SELayer(
+            channel=emb_dim, reduction=1
+        )  # Squeeze-and-excitation layer
 
         ## Inter modules: Modules for external processing between blocks
         self.inter_norm = LayerNormalization4D(emb_dim, eps=eps)  # Layer normalization
@@ -540,14 +625,20 @@ class SyncANetBlock(nn.Module):
             norm_klass=nn.LayerNorm,
             dropout=0.1,
         )
-        self.inter_rnn = self._build_repeats(in_channels, hidden_channels, 20, hidden_channels, repeats=1)  # FSMN layers
-        self.inter_mossformer = MossFormer(dim=emb_dim, group_size=256)  # MossFormer module
+        self.inter_rnn = self._build_repeats(
+            in_channels, hidden_channels, 20, hidden_channels, repeats=1
+        )  # FSMN layers
+        self.inter_mossformer = MossFormer(
+            dim=emb_dim, group_size=256
+        )  # MossFormer module
 
         # Linear transformation for inter module output
         self.inter_linear = nn.ConvTranspose1d(
             hidden_channels, emb_dim, emb_ks, stride=emb_hs
         )
-        self.inter_se = SELayer(channel=emb_dim, reduction=1)  # Squeeze-and-excitation layer
+        self.inter_se = SELayer(
+            channel=emb_dim, reduction=1
+        )  # Squeeze-and-excitation layer
 
         # Approximate query-key dimension calculation
         E = math.ceil(approx_qk_dim * 1.0 / n_freqs)
@@ -579,7 +670,7 @@ class SyncANetBlock(nn.Module):
                     LayerNormalization4DCF((emb_dim // n_head, n_freqs), eps=eps),
                 ),
             )
-        
+
         # Final attention concatenation projection
         self.add_module(
             "attn_concat_proj",
@@ -620,26 +711,26 @@ class SyncANetBlock(nn.Module):
         """Performs a forward pass through the SyncANetBlock.
 
         Args:
-            x (torch.Tensor): Input tensor of shape [B, C, T, Q] where 
-                              B is batch size, C is number of channels, 
+            x (torch.Tensor): Input tensor of shape [B, C, T, Q] where
+                              B is batch size, C is number of channels,
                               T is temporal dimension, and Q is frequency dimension.
 
         Returns:
             torch.Tensor: Output tensor of the same shape [B, C, T, Q].
         """
         B, C, old_T, old_Q = x.shape
-        
+
         # Calculate new dimensions for padding
         T = math.ceil((old_T - self.emb_ks) / self.emb_hs) * self.emb_hs + self.emb_ks
         Q = math.ceil((old_Q - self.emb_ks) / self.emb_hs) * self.emb_hs + self.emb_ks
-        
+
         # Pad the input tensor to match the new dimensions
         x = F.pad(x, (0, Q - old_Q, 0, T - old_T))
 
         # Intra-process
         input_ = x
         intra_rnn = self.intra_norm(input_)  # Normalize input for intra-process
-        intra_rnn = self.Fconv(intra_rnn)    # Apply depthwise convolution
+        intra_rnn = self.Fconv(intra_rnn)  # Apply depthwise convolution
         intra_rnn = (
             intra_rnn.transpose(1, 2).contiguous().view(B * T, C * self.emb_ks, -1)
         )  # Reshape for subsequent operations
@@ -690,7 +781,7 @@ class SyncANetBlock(nn.Module):
 
         batch = inter_rnn
         all_Q, all_K, all_V = [], [], []
-        
+
         # Compute query, key, and value for each attention head
         for ii in range(self.n_head):
             all_Q.append(self["attn_conv_Q_%d" % ii](batch))  # Query
@@ -712,7 +803,9 @@ class SyncANetBlock(nn.Module):
         emb_dim = Q.shape[-1]
 
         # Compute scaled dot-product attention
-        attn_mat = torch.matmul(Q, K.transpose(1, 2)) / (emb_dim**0.5)  # Attention matrix
+        attn_mat = torch.matmul(Q, K.transpose(1, 2)) / (
+            emb_dim**0.5
+        )  # Attention matrix
         attn_mat = F.softmax(attn_mat, dim=2)  # Softmax over attention scores
         V = torch.matmul(attn_mat, V)  # Weighted sum of values
 
@@ -731,9 +824,10 @@ class SyncANetBlock(nn.Module):
         out = batch + inter_rnn
         return out  # Return the output tensor
 
+
 class LayerNormalization4D(nn.Module):
     """
-    LayerNormalization4D applies layer normalization to 4D tensors 
+    LayerNormalization4D applies layer normalization to 4D tensors
     (e.g., [B, C, T, F]), where B is the batch size, C is the number of channels,
     T is the temporal dimension, and F is the frequency dimension.
 
@@ -753,10 +847,14 @@ class LayerNormalization4D(nn.Module):
         """
         super().__init__()
         param_size = [1, input_dimension, 1, 1]
-        self.gamma = Parameter(torch.Tensor(*param_size).to(torch.float32))  # Scale parameter
-        self.beta = Parameter(torch.Tensor(*param_size).to(torch.float32))   # Shift parameter
+        self.gamma = Parameter(
+            torch.Tensor(*param_size).to(torch.float32)
+        )  # Scale parameter
+        self.beta = Parameter(
+            torch.Tensor(*param_size).to(torch.float32)
+        )  # Shift parameter
         init.ones_(self.gamma)  # Initialize gamma to 1
-        init.zeros_(self.beta)   # Initialize beta to 0
+        init.zeros_(self.beta)  # Initialize beta to 0
         self.eps = eps  # Set the epsilon value
 
     def forward(self, x):
@@ -785,11 +883,12 @@ class LayerNormalization4D(nn.Module):
         x_hat = ((x - mu_) / std_) * self.gamma + self.beta  # [B, C, T, F]
         return x_hat
 
+
 class LayerNormalization4DCF(nn.Module):
     """
-    LayerNormalization4DCF applies layer normalization to 4D tensors 
+    LayerNormalization4DCF applies layer normalization to 4D tensors
     (e.g., [B, C, T, F]) specifically designed for DCF (Dynamic Channel Frequency) inputs.
-    
+
     Attributes:
         gamma (torch.Parameter): Learnable scaling parameter.
         beta (torch.Parameter): Learnable shifting parameter.
@@ -801,17 +900,26 @@ class LayerNormalization4DCF(nn.Module):
         Initializes the LayerNormalization4DCF layer.
 
         Args:
-            input_dimension (tuple): A tuple containing the dimensions of the input tensor 
+            input_dimension (tuple): A tuple containing the dimensions of the input tensor
                                      (number of channels, frequency dimension).
             eps (float, optional): Small constant added for numerical stability.
         """
         super().__init__()
         assert len(input_dimension) == 2, "Input dimension must be a tuple of length 2."
-        param_size = [1, input_dimension[0], 1, input_dimension[1]]  # Shape based on input dimensions
-        self.gamma = Parameter(torch.Tensor(*param_size).to(torch.float32))  # Scale parameter
-        self.beta = Parameter(torch.Tensor(*param_size).to(torch.float32))   # Shift parameter
+        param_size = [
+            1,
+            input_dimension[0],
+            1,
+            input_dimension[1],
+        ]  # Shape based on input dimensions
+        self.gamma = Parameter(
+            torch.Tensor(*param_size).to(torch.float32)
+        )  # Scale parameter
+        self.beta = Parameter(
+            torch.Tensor(*param_size).to(torch.float32)
+        )  # Shift parameter
         init.ones_(self.gamma)  # Initialize gamma to 1
-        init.zeros_(self.beta)   # Initialize beta to 0
+        init.zeros_(self.beta)  # Initialize beta to 0
         self.eps = eps  # Set the epsilon value
 
     def forward(self, x):

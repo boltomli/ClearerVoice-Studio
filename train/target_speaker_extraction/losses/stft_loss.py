@@ -5,11 +5,11 @@
 
 """STFT-based Loss modules."""
 
+from distutils.version import LooseVersion
+
 import torch
 import torch.nn.functional as F
 import torchaudio
-
-from distutils.version import LooseVersion
 
 is_pytorch_17plus = LooseVersion(torch.__version__) >= LooseVersion("1.7")
 
@@ -30,14 +30,16 @@ def stft(x, fft_size, hop_size, win_length, window):
     """
     window = window.cuda()
     if is_pytorch_17plus:
-        x_stft = torch.stft(x, fft_size, hop_size, win_length, window, return_complex=False)
+        x_stft = torch.stft(
+            x, fft_size, hop_size, win_length, window, return_complex=False
+        )
     else:
         x_stft = torch.stft(x, fft_size, hop_size, win_length, window)
     real = x_stft[..., 0]
     imag = x_stft[..., 1]
 
     # NOTE(kan-bayashi): clamp is needed to avoid nan or inf
-    return torch.sqrt(torch.clamp(real ** 2 + imag ** 2, min=1e-7)).transpose(2, 1)
+    return torch.sqrt(torch.clamp(real**2 + imag**2, min=1e-7)).transpose(2, 1)
 
 
 class SpectralConvergenceLoss(torch.nn.Module):
@@ -58,24 +60,22 @@ class SpectralConvergenceLoss(torch.nn.Module):
             Tensor: Spectral convergence loss value.
 
         """
-        delta_win_length=5
+        delta_win_length = 5
 
         loss_1 = torch.norm(y_mag - x_mag, p="fro") / torch.norm(y_mag, p="fro")
 
-        x_mag=x_mag.transpose(-1,-2)
-        y_mag=y_mag.transpose(-1,-2)
+        x_mag = x_mag.transpose(-1, -2)
+        y_mag = y_mag.transpose(-1, -2)
 
-        x_del = torchaudio.functional.compute_deltas(x_mag,win_length=delta_win_length)
-        y_del = torchaudio.functional.compute_deltas(y_mag,win_length=delta_win_length)
+        x_del = torchaudio.functional.compute_deltas(x_mag, win_length=delta_win_length)
+        y_del = torchaudio.functional.compute_deltas(y_mag, win_length=delta_win_length)
         loss_2 = torch.norm(y_del - x_del, p="fro") / torch.norm(y_del, p="fro")
-        
-        x_acc = torchaudio.functional.compute_deltas(x_del,win_length=delta_win_length)
-        y_acc = torchaudio.functional.compute_deltas(y_del,win_length=delta_win_length)
+
+        x_acc = torchaudio.functional.compute_deltas(x_del, win_length=delta_win_length)
+        y_acc = torchaudio.functional.compute_deltas(y_del, win_length=delta_win_length)
         loss_3 = torch.norm(y_acc - x_acc, p="fro") / torch.norm(y_acc, p="fro")
 
         return loss_1 + loss_2 + loss_3
-
-
 
 
 class LogSTFTMagnitudeLoss(torch.nn.Module):
@@ -96,24 +96,22 @@ class LogSTFTMagnitudeLoss(torch.nn.Module):
             Tensor: Log STFT magnitude loss value.
 
         """
-        delta_win_length=5
-        
+        delta_win_length = 5
+
         loss_1 = F.l1_loss(torch.log(y_mag), torch.log(x_mag))
 
-        x_mag=torch.log(x_mag).transpose(-1,-2)
-        y_mag=torch.log(y_mag).transpose(-1,-2)
-        
-        x_del = torchaudio.functional.compute_deltas(x_mag ,win_length=delta_win_length)
-        y_del = torchaudio.functional.compute_deltas(y_mag ,win_length=delta_win_length)
+        x_mag = torch.log(x_mag).transpose(-1, -2)
+        y_mag = torch.log(y_mag).transpose(-1, -2)
+
+        x_del = torchaudio.functional.compute_deltas(x_mag, win_length=delta_win_length)
+        y_del = torchaudio.functional.compute_deltas(y_mag, win_length=delta_win_length)
         loss_2 = F.l1_loss(y_del, x_del)
-        
-        x_acc = torchaudio.functional.compute_deltas(x_del ,win_length=delta_win_length)
-        y_acc = torchaudio.functional.compute_deltas(y_del ,win_length=delta_win_length)
+
+        x_acc = torchaudio.functional.compute_deltas(x_del, win_length=delta_win_length)
+        y_acc = torchaudio.functional.compute_deltas(y_del, win_length=delta_win_length)
         loss_3 = F.l1_loss(y_acc, x_acc)
 
-
         return loss_1 + loss_2 + loss_3
-
 
 
 class STFTLoss(torch.nn.Module):
@@ -201,4 +199,4 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         sc_loss /= len(self.stft_losses)
         mag_loss /= len(self.stft_losses)
 
-        return sc_loss+mag_loss
+        return sc_loss + mag_loss

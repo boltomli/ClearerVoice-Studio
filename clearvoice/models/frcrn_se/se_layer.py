@@ -1,5 +1,6 @@
-from torch import nn
 import torch
+from torch import nn
+
 
 ## Referencing the paper: https://arxiv.org/pdf/1709.01507
 class SELayer(nn.Module):
@@ -15,6 +16,7 @@ class SELayer(nn.Module):
         reduction (int): The reduction ratio for the number of channels in the bottleneck.
                          Default is 16.
     """
+
     def __init__(self, channel, reduction=16):
         super(SELayer, self).__init__()
 
@@ -24,17 +26,17 @@ class SELayer(nn.Module):
         # Fully connected layers for the real part
         self.fc_r = nn.Sequential(
             nn.Linear(channel, channel // reduction),  # Reduce channels
-            nn.ReLU(inplace=True),                     # Activation function
+            nn.ReLU(inplace=True),  # Activation function
             nn.Linear(channel // reduction, channel),  # Restore channels
-            nn.Sigmoid()                               # Sigmoid activation to scale outputs
+            nn.Sigmoid(),  # Sigmoid activation to scale outputs
         )
 
         # Fully connected layers for the imaginary part
         self.fc_i = nn.Sequential(
             nn.Linear(channel, channel // reduction),  # Reduce channels
-            nn.ReLU(inplace=True),                     # Activation function
+            nn.ReLU(inplace=True),  # Activation function
             nn.Linear(channel // reduction, channel),  # Restore channels
-            nn.Sigmoid()                               # Sigmoid activation to scale outputs
+            nn.Sigmoid(),  # Sigmoid activation to scale outputs
         )
 
     def forward(self, x):
@@ -42,7 +44,7 @@ class SELayer(nn.Module):
         Forward pass for the SELayer.
 
         The forward method applies the squeeze-and-excitation operation on the input tensor `x`.
-        It computes the channel-wise attention weights for both the real and imaginary parts 
+        It computes the channel-wise attention weights for both the real and imaginary parts
         of the input.
 
         Args:
@@ -54,7 +56,7 @@ class SELayer(nn.Module):
                               W - width.
 
         Returns:
-            torch.Tensor: Output tensor after applying channel-wise attention, 
+            torch.Tensor: Output tensor after applying channel-wise attention,
                           same shape as input `x`.
         """
         # Extract the batch size and number of channels

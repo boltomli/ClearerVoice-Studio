@@ -2,12 +2,14 @@
 # Apache-2.0 license http://www.apache.org/licenses/LICENSE-2.0
 # Modified from https://github.com/JusperLee/Dual-Path-RNN-Pytorch
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 EPS = 1e-8
+
 
 class av_Dprnn(nn.Module):
     def __init__(self, args):
@@ -18,7 +20,7 @@ class av_Dprnn(nn.Module):
         H = args.network_audio.H
         K = args.network_audio.K
         R = args.network_audio.R
-        
+
         self.encoder = Encoder(L, N)
         self.separator = rnn(args, N, B, H, K, R)
         self.decoder = Decoder(args, N, L)
@@ -43,6 +45,7 @@ class av_Dprnn(nn.Module):
         T_conv = est_source.size(-1)
         est_source = F.pad(est_source, (0, T_origin - T_conv))
         return est_source
+
 
 class Encoder(nn.Module):
     def __init__(self, L, N):
@@ -77,73 +80,97 @@ class Decoder(nn.Module):
             est_source: [M, C, T]
         """
         est_source = mixture_w * est_mask
-        est_source = torch.transpose(est_source, 2, 1) # [M,  K, N]
+        est_source = torch.transpose(est_source, 2, 1)  # [M,  K, N]
         est_source = self.basis_signals(est_source)  # [M,  K, L]
-        est_source = overlap_and_add(est_source, self.L//2) # M x C x T
+        est_source = overlap_and_add(est_source, self.L // 2)  # M x C x T
         return est_source
 
-class Dual_RNN_Block(nn.Module):
-    '''
-       Implementation of the intra-RNN and the inter-RNN
-       input:
-            in_channels: The number of expected features in the input x
-            out_channels: The number of features in the hidden state h
-            rnn_type: RNN, LSTM, GRU
-            norm: gln = "Global Norm", cln = "Cumulative Norm", ln = "Layer Norm"
-            dropout: If non-zero, introduces a Dropout layer on the outputs 
-                     of each LSTM layer except the last layer, 
-                     with dropout probability equal to dropout. Default: 0
-            bidirectional: If True, becomes a bidirectional LSTM. Default: False
-    '''
 
-    def __init__(self, out_channels,
-                 hidden_channels, rnn_type='LSTM',
-                 dropout=0, bidirectional=False, num_spks=2):
+class Dual_RNN_Block(nn.Module):
+    """
+    Implementation of the intra-RNN and the inter-RNN
+    input:
+         in_channels: The number of expected features in the input x
+         out_channels: The number of features in the hidden state h
+         rnn_type: RNN, LSTM, GRU
+         norm: gln = "Global Norm", cln = "Cumulative Norm", ln = "Layer Norm"
+         dropout: If non-zero, introduces a Dropout layer on the outputs
+                  of each LSTM layer except the last layer,
+                  with dropout probability equal to dropout. Default: 0
+         bidirectional: If True, becomes a bidirectional LSTM. Default: False
+    """
+
+    def __init__(
+        self,
+        out_channels,
+        hidden_channels,
+        rnn_type="LSTM",
+        dropout=0,
+        bidirectional=False,
+        num_spks=2,
+    ):
         super(Dual_RNN_Block, self).__init__()
         # RNN model
         self.intra_rnn = getattr(nn, rnn_type)(
-            out_channels, hidden_channels, 1, batch_first=True, dropout=dropout, bidirectional=bidirectional)
+            out_channels,
+            hidden_channels,
+            1,
+            batch_first=True,
+            dropout=dropout,
+            bidirectional=bidirectional,
+        )
         self.inter_rnn = getattr(nn, rnn_type)(
-            out_channels, hidden_channels, 1, batch_first=True, dropout=dropout, bidirectional=bidirectional)
+            out_channels,
+            hidden_channels,
+            1,
+            batch_first=True,
+            dropout=dropout,
+            bidirectional=bidirectional,
+        )
         # Norm
         self.intra_norm = nn.GroupNorm(1, out_channels, eps=1e-8)
         self.inter_norm = nn.GroupNorm(1, out_channels, eps=1e-8)
         # Linear
         self.intra_linear = nn.Linear(
-            hidden_channels*2 if bidirectional else hidden_channels, out_channels)
+            hidden_channels * 2 if bidirectional else hidden_channels, out_channels
+        )
         self.inter_linear = nn.Linear(
-            hidden_channels*2 if bidirectional else hidden_channels, out_channels)
-        
+            hidden_channels * 2 if bidirectional else hidden_channels, out_channels
+        )
 
     def forward(self, x):
-        '''
-           x: [B, N, K, S]
-           out: [Spks, B, N, K, S]
-        '''
+        """
+        x: [B, N, K, S]
+        out: [Spks, B, N, K, S]
+        """
         B, N, K, S = x.shape
         # intra RNN
         # [BS, K, N]
-        intra_rnn = x.permute(0, 3, 2, 1).contiguous().view(B*S, K, N)
+        intra_rnn = x.permute(0, 3, 2, 1).contiguous().view(B * S, K, N)
         # [BS, K, H]
         intra_rnn, _ = self.intra_rnn(intra_rnn)
         # [BS, K, N]
-        intra_rnn = self.intra_linear(intra_rnn.contiguous().view(B*S*K, -1)).view(B*S, K, -1)
+        intra_rnn = self.intra_linear(intra_rnn.contiguous().view(B * S * K, -1)).view(
+            B * S, K, -1
+        )
         # [B, S, K, N]
         intra_rnn = intra_rnn.view(B, S, K, N)
         # [B, N, K, S]
         intra_rnn = intra_rnn.permute(0, 3, 2, 1).contiguous()
         intra_rnn = self.intra_norm(intra_rnn)
-        
+
         # [B, N, K, S]
         intra_rnn = intra_rnn + x
 
         # inter RNN
         # [BK, S, N]
-        inter_rnn = intra_rnn.permute(0, 2, 3, 1).contiguous().view(B*K, S, N)
+        inter_rnn = intra_rnn.permute(0, 2, 3, 1).contiguous().view(B * K, S, N)
         # [BK, S, H]
         inter_rnn, _ = self.inter_rnn(inter_rnn)
         # [BK, S, N]
-        inter_rnn = self.inter_linear(inter_rnn.contiguous().view(B*S*K, -1)).view(B*K, S, -1)
+        inter_rnn = self.inter_linear(inter_rnn.contiguous().view(B * S * K, -1)).view(
+            B * K, S, -1
+        )
         # [B, K, S, N]
         inter_rnn = inter_rnn.view(B, K, S, N)
         # [B, N, K, S]
@@ -154,10 +181,11 @@ class Dual_RNN_Block(nn.Module):
 
         return out
 
+
 class rnn(nn.Module):
-    def __init__(self,args, N, B, H, K, R):
+    def __init__(self, args, N, B, H, K, R):
         super(rnn, self).__init__()
-        self.K , self.R , self.args = K, R, args
+        self.K, self.R, self.args = K, R, args
         # [M, N, K] -> [M, N, K]
         self.layer_norm = nn.GroupNorm(1, N, eps=1e-8)
         # [M, N, K] -> [M, B, K]
@@ -165,18 +193,16 @@ class rnn(nn.Module):
 
         self.dual_rnn = nn.ModuleList([])
         for i in range(R):
-            self.dual_rnn.append(Dual_RNN_Block(B, H,
-                                     rnn_type='LSTM',  dropout=0,
-                                     bidirectional=True))
+            self.dual_rnn.append(
+                Dual_RNN_Block(B, H, rnn_type="LSTM", dropout=0, bidirectional=True)
+            )
 
         self.prelu = nn.PReLU()
 
         self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
 
-
         # audio visual projection layer
-        self.av_conv = nn.Conv1d(B+args.network_reference.emb_size, B, 1, bias=False)
-
+        self.av_conv = nn.Conv1d(B + args.network_reference.emb_size, B, 1, bias=False)
 
     def forward(self, x, visual=None):
         """
@@ -188,16 +214,15 @@ class rnn(nn.Module):
         """
         M, N, D = x.size()
 
-        x = self.layer_norm(x) # [M, N, K]
-        x = self.bottleneck_conv1x1(x) # [M, B, K]
+        x = self.layer_norm(x)  # [M, N, K]
+        x = self.bottleneck_conv1x1(x)  # [M, B, K]
 
         # if visual is included
-        visual = F.interpolate(visual, (D), mode='linear')
-        x = torch.cat((x, visual),1)
-        x  = self.av_conv(x)
-        
+        visual = F.interpolate(visual, (D), mode="linear")
+        x = torch.cat((x, visual), 1)
+        x = self.av_conv(x)
 
-        x, gap = self._Segmentation(x, self.K) # [M, B, k, S]
+        x, gap = self._Segmentation(x, self.K)  # [M, B, k, S]
 
         for i in range(self.R):
             x = self.dual_rnn[i](x)
@@ -211,12 +236,12 @@ class rnn(nn.Module):
         return x
 
     def _padding(self, input, K):
-        '''
-           padding the audio times
-           K: chunks of length
-           P: hop size
-           input: [B, N, L]
-        '''
+        """
+        padding the audio times
+        K: chunks of length
+        P: hop size
+        input: [B, N, L]
+        """
         B, N, L = input.shape
         P = K // 2
         gap = K - (P + L % K) % K
@@ -230,32 +255,30 @@ class rnn(nn.Module):
         return input, gap
 
     def _Segmentation(self, input, K):
-        '''
-           the segmentation stage splits
-           K: chunks of length
-           P: hop size
-           input: [B, N, L]
-           output: [B, N, K, S]
-        '''
+        """
+        the segmentation stage splits
+        K: chunks of length
+        P: hop size
+        input: [B, N, L]
+        output: [B, N, K, S]
+        """
         B, N, L = input.shape
         P = K // 2
         input, gap = self._padding(input, K)
         # [B, N, K, S]
         input1 = input[:, :, :-P].contiguous().view(B, N, -1, K)
         input2 = input[:, :, P:].contiguous().view(B, N, -1, K)
-        input = torch.cat([input1, input2], dim=3).view(
-            B, N, -1, K).transpose(2, 3)
+        input = torch.cat([input1, input2], dim=3).view(B, N, -1, K).transpose(2, 3)
 
         return input.contiguous(), gap
 
-
     def _over_add(self, input, gap):
-        '''
-           Merge sequence
-           input: [B, N, K, S]
-           gap: padding length
-           output: [B, N, L]
-        '''
+        """
+        Merge sequence
+        input: [B, N, K, S]
+        gap: padding length
+        output: [B, N, L]
+        """
         B, N, K, S = input.shape
         P = K // 2
         # [B, N, S, K]
@@ -271,13 +294,13 @@ class rnn(nn.Module):
         return input
 
 
-
 class GlobalLayerNorm(nn.Module):
     """Global Layer Normalization (gLN)"""
+
     def __init__(self, channel_size):
         super(GlobalLayerNorm, self).__init__()
         self.gamma = nn.Parameter(torch.Tensor(1, channel_size, 1))  # [1, N, 1]
-        self.beta = nn.Parameter(torch.Tensor(1, channel_size,1 ))  # [1, N, 1]
+        self.beta = nn.Parameter(torch.Tensor(1, channel_size, 1))  # [1, N, 1]
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -292,8 +315,10 @@ class GlobalLayerNorm(nn.Module):
             gLN_y: [M, N, K]
         """
         # TODO: in torch 1.0, torch.mean() support dim list
-        mean = y.mean(dim=1, keepdim=True).mean(dim=2, keepdim=True) #[M, 1, 1]
-        var = (torch.pow(y-mean, 2)).mean(dim=1, keepdim=True).mean(dim=2, keepdim=True)
+        mean = y.mean(dim=1, keepdim=True).mean(dim=2, keepdim=True)  # [M, 1, 1]
+        var = (
+            (torch.pow(y - mean, 2)).mean(dim=1, keepdim=True).mean(dim=2, keepdim=True)
+        )
         gLN_y = self.gamma * (y - mean) / torch.pow(var + EPS, 0.5) + self.beta
         return gLN_y
 
@@ -328,7 +353,9 @@ def overlap_and_add(signal, frame_step):
 
     subframe_signal = signal.view(*outer_dimensions, -1, subframe_length)
 
-    frame = torch.arange(0, output_subframes).unfold(0, subframes_per_frame, subframe_step)
+    frame = torch.arange(0, output_subframes).unfold(
+        0, subframes_per_frame, subframe_step
+    )
     frame = signal.new_tensor(frame).long().cuda()  # signal may in GPU or CPU
     frame = frame.contiguous().view(-1)
 

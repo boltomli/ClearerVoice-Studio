@@ -3,13 +3,14 @@ modified from https://github.com/speechbrain/speechbrain/blob/develop/speechbrai
 Author: Shengkui Zhao
 """
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import copy
-from models.mossformer2.mossformer2_block import ScaledSinuEmbedding, MossformerBlock_GFSMN, MossformerBlock
-
+from models.mossformer2.mossformer2_block import (
+    MossformerBlock,
+    MossformerBlock_GFSMN,
+    ScaledSinuEmbedding,
+)
 
 EPS = 1e-8
 
@@ -68,10 +69,7 @@ class GlobalLayerNorm(nn.Module):
             mean = torch.mean(x, (1, 2), keepdim=True)
             var = torch.mean((x - mean) ** 2, (1, 2), keepdim=True)
             if self.elementwise_affine:
-                x = (
-                    self.weight * (x - mean) / torch.sqrt(var + self.eps)
-                    + self.bias
-                )
+                x = self.weight * (x - mean) / torch.sqrt(var + self.eps) + self.bias
             else:
                 x = (x - mean) / torch.sqrt(var + self.eps)
 
@@ -79,10 +77,7 @@ class GlobalLayerNorm(nn.Module):
             mean = torch.mean(x, (1, 2, 3), keepdim=True)
             var = torch.mean((x - mean) ** 2, (1, 2, 3), keepdim=True)
             if self.elementwise_affine:
-                x = (
-                    self.weight * (x - mean) / torch.sqrt(var + self.eps)
-                    + self.bias
-                )
+                x = self.weight * (x - mean) / torch.sqrt(var + self.eps) + self.bias
             else:
                 x = (x - mean) / torch.sqrt(var + self.eps)
         return x
@@ -136,8 +131,7 @@ class CumulativeLayerNorm(nn.LayerNorm):
 
 
 def select_norm(norm, dim, shape):
-    """Just a wrapper to select the normalization type.
-    """
+    """Just a wrapper to select the normalization type."""
 
     if norm == "gln":
         return GlobalLayerNorm(dim, shape, elementwise_affine=True)
@@ -247,9 +241,7 @@ class Decoder(nn.ConvTranspose1d):
         """
 
         if x.dim() not in [2, 3]:
-            raise RuntimeError(
-                "{} accept 3/4D tensor as input".format(self.__name__)
-            )
+            raise RuntimeError("{} accept 3/4D tensor as input".format(self.__name__))
         x = super().forward(x if x.dim() == 3 else torch.unsqueeze(x, 1))
 
         if torch.squeeze(x).dim() == 1:
@@ -305,28 +297,30 @@ class MossFormerM(nn.Module):
     >>> output.shape
     torch.Size([8, 60, 512])
     """
+
     def __init__(
         self,
         num_blocks,
         d_model=None,
         causal=False,
-        group_size = 256,
-        query_key_dim = 128,
-        expansion_factor = 4.,
-        attn_dropout = 0.1
+        group_size=256,
+        query_key_dim=128,
+        expansion_factor=4.0,
+        attn_dropout=0.1,
     ):
         super().__init__()
 
         self.mossformerM = MossformerBlock_GFSMN(
-                           dim=d_model,
-                           depth=num_blocks,
-                           group_size=group_size,
-                           query_key_dim=query_key_dim,
-                           expansion_factor=expansion_factor,
-                           causal=causal,
-                           attn_dropout=attn_dropout
-                              )
+            dim=d_model,
+            depth=num_blocks,
+            group_size=group_size,
+            query_key_dim=query_key_dim,
+            expansion_factor=expansion_factor,
+            causal=causal,
+            attn_dropout=attn_dropout,
+        )
         self.norm = nn.LayerNorm(d_model, eps=1e-6)
+
     def forward(
         self,
         src,
@@ -349,6 +343,7 @@ class MossFormerM(nn.Module):
         output = self.norm(output)
 
         return output
+
 
 class MossFormerM2(nn.Module):
     """This class implements the transformer encoder.
@@ -379,27 +374,28 @@ class MossFormerM2(nn.Module):
     >>> output.shape
     torch.Size([8, 60, 512])
     """
+
     def __init__(
         self,
         num_blocks,
         d_model=None,
         causal=False,
-        group_size = 256,
-        query_key_dim = 128,
-        expansion_factor = 4.,
-        attn_dropout = 0.1
+        group_size=256,
+        query_key_dim=128,
+        expansion_factor=4.0,
+        attn_dropout=0.1,
     ):
         super().__init__()
 
         self.mossformerM = MossformerBlock(
-                           dim=d_model,
-                           depth=num_blocks,
-                           group_size=group_size,
-                           query_key_dim=query_key_dim,
-                           expansion_factor=expansion_factor,
-                           causal=causal,
-                           attn_dropout=attn_dropout
-                              )
+            dim=d_model,
+            depth=num_blocks,
+            group_size=group_size,
+            query_key_dim=query_key_dim,
+            expansion_factor=expansion_factor,
+            causal=causal,
+            attn_dropout=attn_dropout,
+        )
         self.norm = nn.LayerNorm(d_model, eps=1e-6)
 
     def forward(
@@ -424,6 +420,7 @@ class MossFormerM2(nn.Module):
         output = self.norm(output)
 
         return output
+
 
 class Computation_Block(nn.Module):
     """Computation block for dual-path processing.
@@ -458,7 +455,7 @@ class Computation_Block(nn.Module):
         ##Default MossFormer2 model
         self.intra_mdl = MossFormerM(num_blocks=num_blocks, d_model=out_channels)
         ##The previous MossFormer model
-        #self.intra_mdl = MossFormerM2(num_blocks=num_blocks, d_model=out_channels)
+        # self.intra_mdl = MossFormerM2(num_blocks=num_blocks, d_model=out_channels)
         self.skip_around_intra = skip_around_intra
 
         # Norm
@@ -481,11 +478,11 @@ class Computation_Block(nn.Module):
             Output tensor of dimension [B, N, S].
             where, B = Batchsize,
                N = number of filters
-               S = sequence time index 
+               S = sequence time index
         """
         B, N, S = x.shape
         # [B, S, N]
-        intra = x.permute(0, 2, 1).contiguous() 
+        intra = x.permute(0, 2, 1).contiguous()
 
         intra = self.intra_mdl(intra)
 
@@ -559,11 +556,11 @@ class MossFormer_MaskNet(nn.Module):
             self.pos_enc = ScaledSinuEmbedding(out_channels)
 
         self.mdl = Computation_Block(
-                    num_blocks,
-                    out_channels,
-                    norm,
-                    skip_around_intra=skip_around_intra,
-                )
+            num_blocks,
+            out_channels,
+            norm,
+            skip_around_intra=skip_around_intra,
+        )
 
         self.conv1d_out = nn.Conv1d(
             out_channels, out_channels * num_spks, kernel_size=1
@@ -572,9 +569,7 @@ class MossFormer_MaskNet(nn.Module):
         self.prelu = nn.PReLU()
         self.activation = nn.ReLU()
         # gated output layer
-        self.output = nn.Sequential(
-            nn.Conv1d(out_channels, out_channels, 1), nn.Tanh()
-        )
+        self.output = nn.Sequential(nn.Conv1d(out_channels, out_channels, 1), nn.Tanh())
         self.output_gate = nn.Sequential(
             nn.Conv1d(out_channels, out_channels, 1), nn.Sigmoid()
         )
@@ -608,9 +603,8 @@ class MossFormer_MaskNet(nn.Module):
             base = x
             x = x.transpose(1, -1)
             emb = self.pos_enc(x)
-            emb = emb.transpose(0, -1) 
+            emb = emb.transpose(0, -1)
             x = base + emb
-            
 
         # [B, N, S]
         x = self.mdl(x)
@@ -637,5 +631,4 @@ class MossFormer_MaskNet(nn.Module):
         # [spks, B, N, S]
         x = x.transpose(0, 1)
         # return the 1st spk signal as the target speech
-        return x[0].transpose(1,2)
-
+        return x[0].transpose(1, 2)

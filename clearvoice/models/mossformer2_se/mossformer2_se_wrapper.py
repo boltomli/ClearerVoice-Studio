@@ -1,5 +1,6 @@
-from models.mossformer2_se.mossformer2 import MossFormer_MaskNet
 import torch.nn as nn
+from models.mossformer2_se.mossformer2 import MossFormer_MaskNet
+
 
 class MossFormer2_SE_48K(nn.Module):
     """
@@ -12,8 +13,8 @@ class MossFormer2_SE_48K(nn.Module):
     Arguments
     ---------
     args : Namespace
-        Configuration arguments that may include hyperparameters 
-        and model settings (not utilized in this implementation but 
+        Configuration arguments that may include hyperparameters
+        and model settings (not utilized in this implementation but
         can be extended for flexibility).
 
     Example
@@ -70,7 +71,9 @@ class TestNet(nn.Module):
         super(TestNet, self).__init__()
         self.n_layers = n_layers  # Set the number of layers
         # Initialize the MossFormer MaskNet with specified input and output channels
-        self.mossformer = MossFormer_MaskNet(in_channels=180, out_channels=512, out_channels_final=961)
+        self.mossformer = MossFormer_MaskNet(
+            in_channels=180, out_channels=512, out_channels_final=961
+        )
 
     def forward(self, input):
         """
@@ -90,7 +93,7 @@ class TestNet(nn.Module):
         out_list = []  # Initialize output list to store outputs
         # Transpose input to match expected shape for MaskNet
         x = input.transpose(1, 2)  # Change shape from [B, N, S] to [B, S, N]
-        
+
         # Get the mask from the MossFormer MaskNet
         mask = self.mossformer(x)  # Forward pass through the MossFormer_MaskNet
         out_list.append(mask)  # Append the mask to the output list

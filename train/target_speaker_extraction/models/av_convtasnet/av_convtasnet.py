@@ -2,16 +2,19 @@
 # MIT license
 # Modified from https://github.com/kaituoxu/Conv-TasNet
 
+import copy
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
-import copy
 
 EPS = 1e-8
 
+
 def _clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+
 
 class av_convtasnet(nn.Module):
     def __init__(self, args):
@@ -23,7 +26,7 @@ class av_convtasnet(nn.Module):
         P = args.network_audio.P
         X = args.network_audio.X
         R = args.network_audio.R
-        
+
         self.encoder = Encoder(L, N)
         self.separator = separator(args, N, B, H, P, X, R, args.causal)
         self.decoder = Decoder(args, N, L)
@@ -48,6 +51,7 @@ class av_convtasnet(nn.Module):
         T_conv = est_source.size(-1)
         est_source = F.pad(est_source, (0, T_origin - T_conv))
         return est_source
+
 
 class Encoder(nn.Module):
     def __init__(self, L, N):
@@ -82,9 +86,9 @@ class Decoder(nn.Module):
             est_source: [M, C, T]
         """
         est_source = mixture_w * est_mask
-        est_source = torch.transpose(est_source, 2, 1) # [M,  K, N]
+        est_source = torch.transpose(est_source, 2, 1)  # [M,  K, N]
         est_source = self.basis_signals(est_source)  # [M,  K, L]
-        est_source = overlap_and_add(est_source, self.L//2) # M x C x T
+        est_source = overlap_and_add(est_source, self.L // 2)  # M x C x T
         return est_source
 
 
@@ -98,10 +102,10 @@ class separator(nn.Module):
             self.layer_norm = ChannelWiseLayerNorm(N)
         self.bottleneck_conv1x1 = nn.Conv1d(N, B, 1)
 
-        self.tcn = _clones(TCN_block(X,P,B,H,causal), R)
+        self.tcn = _clones(TCN_block(X, P, B, H, causal), R)
         self.mask_conv1x1 = nn.Conv1d(B, N, 1)
 
-        self.av_conv = nn.Conv1d(B+args.network_reference.emb_size, B, 1, bias=False)
+        self.av_conv = nn.Conv1d(B + args.network_reference.emb_size, B, 1, bias=False)
 
     def forward(self, x, visual):
         K = x.size()[-1]
@@ -109,14 +113,13 @@ class separator(nn.Module):
         x = self.layer_norm(x)
         x = self.bottleneck_conv1x1(x)
 
-
         # tcn blocks
         for i in range(len(self.tcn)):
-            if i ==1:
+            if i == 1:
                 # if visual is included
-                visual = F.interpolate(visual, (K), mode='linear')
-                x = torch.cat((x, visual),1)
-                x  = self.av_conv(x)
+                visual = F.interpolate(visual, (K), mode="linear")
+                x = torch.cat((x, visual), 1)
+                x = self.av_conv(x)
 
             x = self.tcn[i](x)
 
@@ -124,17 +127,19 @@ class separator(nn.Module):
         x = F.relu(x)
         return x
 
+
 class TCN_block(nn.Module):
     def __init__(self, X, P, B, H, causal):
         super(TCN_block, self).__init__()
         tcn_blocks = []
         for x in range(X):
-            tcn_blocks += [Conv1DBlock(B, H, P, dilation = 2**x, causal=causal)]
+            tcn_blocks += [Conv1DBlock(B, H, P, dilation=2**x, causal=causal)]
         self.tcn = nn.Sequential(*tcn_blocks)
 
     def forward(self, x):
         x = self.tcn(x)
         return x
+
 
 class Conv1DBlock(nn.Module):
     """
@@ -142,12 +147,14 @@ class Conv1DBlock(nn.Module):
         Conv1x1 - PReLU - Norm - DConv - PReLU - Norm - SConv
     """
 
-    def __init__(self,
-                 in_channels=256,
-                 conv_channels=512,
-                 kernel_size=3,
-                 dilation=1,
-                 causal=False):
+    def __init__(
+        self,
+        in_channels=256,
+        conv_channels=512,
+        kernel_size=3,
+        dilation=1,
+        causal=False,
+    ):
         super(Conv1DBlock, self).__init__()
         # 1x1 conv
         self.conv1x1 = nn.Conv1d(in_channels, conv_channels, 1)
@@ -156,8 +163,11 @@ class Conv1DBlock(nn.Module):
             self.lnorm1 = cLN(conv_channels)
         else:
             self.lnorm1 = ChannelWiseLayerNorm(conv_channels)
-        dconv_pad = (dilation * (kernel_size - 1)) // 2 if not causal else (
-            dilation * (kernel_size - 1))
+        dconv_pad = (
+            (dilation * (kernel_size - 1)) // 2
+            if not causal
+            else (dilation * (kernel_size - 1))
+        )
         # depthwise conv
         self.dconv = nn.Conv1d(
             conv_channels,
@@ -165,7 +175,8 @@ class Conv1DBlock(nn.Module):
             kernel_size,
             groups=conv_channels,
             padding=dconv_pad,
-            dilation=dilation)
+            dilation=dilation,
+        )
         self.prelu2 = nn.PReLU()
         if causal:
             self.lnorm2 = cLN(conv_channels)
@@ -182,7 +193,7 @@ class Conv1DBlock(nn.Module):
         y = self.lnorm1(self.prelu1(y))
         y = self.dconv(y)
         if self.causal:
-            y = y[:, :, :-self.dconv_pad]
+            y = y[:, :, : -self.dconv_pad]
         y = self.lnorm2(self.prelu2(y))
         y = self.sconv(y)
         x = x + y
@@ -195,8 +206,7 @@ class ChannelWiseLayerNorm(nn.LayerNorm):
 
     def forward(self, x):
         if x.dim() != 3:
-            raise RuntimeError("{} accept 3D tensor as input".format(
-                self.__name__))
+            raise RuntimeError("{} accept 3D tensor as input".format(self.__name__))
         # N x C x T => N x T x C
         x = torch.transpose(x, 1, 2)
         # LN
@@ -205,10 +215,11 @@ class ChannelWiseLayerNorm(nn.LayerNorm):
         x = torch.transpose(x, 1, 2)
         return x
 
+
 class cLN(nn.Module):
-    def __init__(self, dimension, eps = 1e-8, trainable=True):
+    def __init__(self, dimension, eps=1e-8, trainable=True):
         super(cLN, self).__init__()
-        
+
         self.eps = eps
         if trainable:
             self.gain = nn.Parameter(torch.ones(1, dimension, 1))
@@ -220,29 +231,33 @@ class cLN(nn.Module):
     def forward(self, input):
         # input size: (Batch, Freq, Time)
         # cumulative mean for each time step
-        
-        batch_size = input.size(0)
+
+        input.size(0)
         channel = input.size(1)
         time_step = input.size(2)
-        
+
         step_sum = input.sum(1)  # B, T
         step_pow_sum = input.pow(2).sum(1)  # B, T
         cum_sum = torch.cumsum(step_sum, dim=1)  # B, T
         cum_pow_sum = torch.cumsum(step_pow_sum, dim=1)  # B, T
-        
-        entry_cnt = np.arange(channel, channel*(time_step+1), channel)
+
+        entry_cnt = np.arange(channel, channel * (time_step + 1), channel)
         entry_cnt = torch.from_numpy(entry_cnt).type(input.type())
         entry_cnt = entry_cnt.view(1, -1).expand_as(cum_sum)
-        
+
         cum_mean = cum_sum / entry_cnt  # B, T
-        cum_var = (cum_pow_sum - 2*cum_mean*cum_sum) / entry_cnt + cum_mean.pow(2)  # B, T
+        cum_var = (cum_pow_sum - 2 * cum_mean * cum_sum) / entry_cnt + cum_mean.pow(
+            2
+        )  # B, T
         cum_std = (cum_var + self.eps).sqrt()  # B, T
-        
+
         cum_mean = cum_mean.unsqueeze(1)
         cum_std = cum_std.unsqueeze(1)
-        
+
         x = (input - cum_mean.expand_as(input)) / cum_std.expand_as(input)
-        return x * self.gain.expand_as(x).type(x.type()) + self.bias.expand_as(x).type(x.type())
+        return x * self.gain.expand_as(x).type(x.type()) + self.bias.expand_as(x).type(
+            x.type()
+        )
 
 
 def overlap_and_add(signal, frame_step):
@@ -270,7 +285,9 @@ def overlap_and_add(signal, frame_step):
 
     subframe_signal = signal.view(*outer_dimensions, -1, subframe_length)
 
-    frame = torch.arange(0, output_subframes).unfold(0, subframes_per_frame, subframe_step)
+    frame = torch.arange(0, output_subframes).unfold(
+        0, subframes_per_frame, subframe_step
+    )
     frame = signal.new_tensor(frame).long().cuda()  # signal may in GPU or CPU
     frame = frame.contiguous().view(-1)
 

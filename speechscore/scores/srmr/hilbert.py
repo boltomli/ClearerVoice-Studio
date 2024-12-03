@@ -12,6 +12,7 @@ from numpy.fft import fft, ifft
 # license, you can install the package mklfft, which will plug the faster MKL FFT functions
 # into numpy.
 
+
 def hilbert(x, N=None, axis=-1):
     """
     Compute the analytic signal, using the Hilbert transform.
@@ -50,7 +51,7 @@ def hilbert(x, N=None, axis=-1):
         N = x.shape[axis]
         # Make N multiple of 16 to make sure the transform will be fast
         if N % 16:
-            N = int(np.ceil(N/16)*16)
+            N = int(np.ceil(N / 16) * 16)
     if N <= 0:
         raise ValueError("N must be positive.")
 
@@ -58,14 +59,14 @@ def hilbert(x, N=None, axis=-1):
     h = np.zeros(N)
     if N % 2 == 0:
         h[0] = h[N // 2] = 1
-        h[1:N // 2] = 2
+        h[1 : N // 2] = 2
     else:
         h[0] = 1
-        h[1:(N + 1) // 2] = 2
+        h[1 : (N + 1) // 2] = 2
 
     if len(x.shape) > 1:
         ind = [np.newaxis] * x.ndim
         ind[axis] = slice(None)
         h = h[ind]
     y = ifft(Xf * h, axis=axis)
-    return y[:x.shape[axis]]
+    return y[: x.shape[axis]]

@@ -1,12 +1,15 @@
 import torch
 import torch.nn as nn
-from torch import Tensor
-import torch.nn.init as init
 import torch.nn.functional as F
+import torch.nn.init as init
+from torch import Tensor
+
 
 class UniDeepFsmn(nn.Module):
 
-    def __init__(self, input_dim, output_dim, lorder=None, hidden_size=None, dropout_p=0.1):
+    def __init__(
+        self, input_dim, output_dim, lorder=None, hidden_size=None, dropout_p=0.1
+    ):
         super(UniDeepFsmn, self).__init__()
 
         self.input_dim = input_dim
@@ -23,27 +26,34 @@ class UniDeepFsmn(nn.Module):
 
         self.project = nn.Linear(hidden_size, output_dim, bias=False)
 
-        self.conv1 = nn.Conv2d(input_dim, output_dim, [self.lorder+self.rorder-1, 1], [1, 1], groups=input_dim, bias=False)
+        self.conv1 = nn.Conv2d(
+            input_dim,
+            output_dim,
+            [self.lorder + self.rorder - 1, 1],
+            [1, 1],
+            groups=input_dim,
+            bias=False,
+        )
         self.norm = nn.LayerNorm(input_dim)
         self.dropout = nn.Dropout(p=dropout_p)
         self.swish = Swish()
 
-    def forward(self, input):        
+    def forward(self, input):
         ## input: batch (b) x sequence(T) x feature (h)
         f1 = self.swish(self.linear(self.norm(input)))
 
         p1 = self.project(f1)
 
         x = torch.unsqueeze(p1, 1)
-        #x: batch (b) x channel (c) x sequence(T) x feature (h)
+        # x: batch (b) x channel (c) x sequence(T) x feature (h)
         x_per = x.permute(0, 3, 2, 1)
-        #x_per: batch (b) x feature (h) x sequence(T) x channel (c)
+        # x_per: batch (b) x feature (h) x sequence(T) x channel (c)
         y = F.pad(x_per, [0, 0, self.lorder - 1, self.rorder - 1])
 
         out = x_per + self.conv1(y)
 
         out1 = out.permute(0, 3, 2, 1)
-        #out1: batch (b) x channel (c) x sequence(T) x feature (h)
+        # out1: batch (b) x channel (c) x sequence(T) x feature (h)
         return input + out1.squeeze()
 
 
@@ -101,10 +111,7 @@ class GlobalLayerNorm(nn.Module):
             mean = torch.mean(x, (1, 2), keepdim=True)
             var = torch.mean((x - mean) ** 2, (1, 2), keepdim=True)
             if self.elementwise_affine:
-                x = (
-                    self.weight * (x - mean) / torch.sqrt(var + self.eps)
-                    + self.bias
-                )
+                x = self.weight * (x - mean) / torch.sqrt(var + self.eps) + self.bias
             else:
                 x = (x - mean) / torch.sqrt(var + self.eps)
 
@@ -112,10 +119,7 @@ class GlobalLayerNorm(nn.Module):
             mean = torch.mean(x, (1, 2, 3), keepdim=True)
             var = torch.mean((x - mean) ** 2, (1, 2, 3), keepdim=True)
             if self.elementwise_affine:
-                x = (
-                    self.weight * (x - mean) / torch.sqrt(var + self.eps)
-                    + self.bias
-                )
+                x = self.weight * (x - mean) / torch.sqrt(var + self.eps) + self.bias
             else:
                 x = (x - mean) / torch.sqrt(var + self.eps)
         return x
@@ -169,8 +173,7 @@ class CumulativeLayerNorm(nn.LayerNorm):
 
 
 def select_norm(norm, dim, shape):
-    """Just a wrapper to select the normalization type.
-    """
+    """Just a wrapper to select the normalization type."""
 
     if norm == "gln":
         return GlobalLayerNorm(dim, shape, elementwise_affine=True)
@@ -181,14 +184,16 @@ def select_norm(norm, dim, shape):
     else:
         return nn.BatchNorm1d(dim)
 
+
 class Swish(nn.Module):
     """
     Swish is a smooth, non-monotonic function that consistently matches or outperforms ReLU on deep networks applied
     to a variety of challenging domains such as Image classification and Machine translation.
     """
+
     def __init__(self):
         super(Swish, self).__init__()
-    
+
     def forward(self, inputs: Tensor) -> Tensor:
         return inputs * inputs.sigmoid()
 
@@ -198,6 +203,7 @@ class GLU(nn.Module):
     The gating mechanism is called Gated Linear Units (GLU), which was first introduced for natural language processing
     in the paper “Language Modeling with Gated Convolutional Networks”
     """
+
     def __init__(self, dim: int) -> None:
         super(GLU, self).__init__()
         self.dim = dim
@@ -206,8 +212,10 @@ class GLU(nn.Module):
         outputs, gate = inputs.chunk(2, dim=self.dim)
         return outputs * gate.sigmoid()
 
+
 class Transpose(nn.Module):
-    """ Wrapper class of torch.transpose() for Sequential module. """
+    """Wrapper class of torch.transpose() for Sequential module."""
+
     def __init__(self, shape: tuple):
         super(Transpose, self).__init__()
         self.shape = shape
@@ -215,11 +223,13 @@ class Transpose(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return x.transpose(*self.shape)
 
+
 class Linear(nn.Module):
     """
     Wrapper class of torch.nn.Linear
     Weight initialize by xavier initialization and bias initialize to zeros.
     """
+
     def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
         super(Linear, self).__init__()
         self.linear = nn.Linear(in_features, out_features, bias=bias)
@@ -229,6 +239,7 @@ class Linear(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.linear(x)
+
 
 class DepthwiseConv1d(nn.Module):
     """
@@ -246,17 +257,20 @@ class DepthwiseConv1d(nn.Module):
     Returns: outputs
         - **outputs** (batch, out_channels, time): Tensor produces by depthwise 1-D convolution.
     """
+
     def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            kernel_size: int,
-            stride: int = 1,
-            padding: int = 0,
-            bias: bool = False,
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        bias: bool = False,
     ) -> None:
         super(DepthwiseConv1d, self).__init__()
-        assert out_channels % in_channels == 0, "out_channels should be constant multiple of in_channels"
+        assert (
+            out_channels % in_channels == 0
+        ), "out_channels should be constant multiple of in_channels"
         self.conv = nn.Conv1d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -269,6 +283,7 @@ class DepthwiseConv1d(nn.Module):
 
     def forward(self, inputs: Tensor) -> Tensor:
         return self.conv(inputs)
+
 
 class DepthwiseConv2d(nn.Module):
     """
@@ -286,21 +301,31 @@ class DepthwiseConv2d(nn.Module):
     Returns: outputs
         - **outputs** (batch, out_channels, time): Tensor produces by depthwise 1-D convolution.
     """
+
     def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            kernel_size: int,
-            stride: int = 1,
-            padding: int = 0,
-            bias: bool = False,
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        bias: bool = False,
     ) -> None:
         super(DepthwiseConv2d, self).__init__()
-        assert out_channels % in_channels == 0, "out_channels should be constant multiple of in_channels"
+        assert (
+            out_channels % in_channels == 0
+        ), "out_channels should be constant multiple of in_channels"
         self.lorder = kernel_size
         self.rorder = self.lorder
-        self.conv = nn.Conv2d(in_channels, out_channels, [self.lorder+self.rorder-1, 1], [1, 1], groups=in_channels, bias=False)
-        '''
+        self.conv = nn.Conv2d(
+            in_channels,
+            out_channels,
+            [self.lorder + self.rorder - 1, 1],
+            [1, 1],
+            groups=in_channels,
+            bias=False,
+        )
+        """
         self.conv = nn.Conv1d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -310,20 +335,22 @@ class DepthwiseConv2d(nn.Module):
             padding=padding,
             bias=bias,
         )
-        '''
+        """
+
     def forward(self, inputs: Tensor) -> Tensor:
         ##input: batch x feature x sequence
         x = torch.unsqueeze(inputs, -1)
-        #x_per = x.permute(0, 3, 2, 1)
-        #x_per: batch (b) x feature (h) x sequence(T) x channel (c)
-        #y = F.pad(x_per, [0, 0, self.lorder - 1, 0])
+        # x_per = x.permute(0, 3, 2, 1)
+        # x_per: batch (b) x feature (h) x sequence(T) x channel (c)
+        # y = F.pad(x_per, [0, 0, self.lorder - 1, 0])
         y = F.pad(x, [0, 0, self.lorder - 1, self.rorder - 1])
 
         out = x + self.conv(y)
 
-        #out1 = out.permute(0, 3, 2, 1)
-        #out1: batch (b) x channel (c) x sequence(T) x feature (h)
-        return out.squeeze(-1)    
+        # out1 = out.permute(0, 3, 2, 1)
+        # out1: batch (b) x channel (c) x sequence(T) x feature (h)
+        return out.squeeze(-1)
+
 
 class PointwiseConv1d(nn.Module):
     """
@@ -340,13 +367,14 @@ class PointwiseConv1d(nn.Module):
     Returns: outputs
         - **outputs** (batch, out_channels, time): Tensor produces by pointwise 1-D convolution.
     """
+
     def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            stride: int = 1,
-            padding: int = 0,
-            bias: bool = True,
+        self,
+        in_channels: int,
+        out_channels: int,
+        stride: int = 1,
+        padding: int = 0,
+        bias: bool = True,
     ) -> None:
         super(PointwiseConv1d, self).__init__()
         self.conv = nn.Conv1d(
@@ -374,24 +402,34 @@ class ConvModule(nn.Module):
     Outputs: outputs
         outputs (batch, time, dim): Tensor produces by conformer convolution module.
     """
+
     def __init__(
-            self,
-            in_channels: int,
-            kernel_size: int = 31, 
-            expansion_factor: int = 2,
-            dropout_p: float = 0.1,
+        self,
+        in_channels: int,
+        kernel_size: int = 31,
+        expansion_factor: int = 2,
+        dropout_p: float = 0.1,
     ) -> None:
         super(ConvModule, self).__init__()
-        assert (kernel_size - 1) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
+        assert (
+            kernel_size - 1
+        ) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
         assert expansion_factor == 2, "Currently, Only Supports expansion_factor 2"
 
         self.sequential = nn.Sequential(
             Transpose(shape=(1, 2)),
-            DepthwiseConv1d(in_channels, in_channels, kernel_size, stride=1, padding=(kernel_size - 1) // 2),
+            DepthwiseConv1d(
+                in_channels,
+                in_channels,
+                kernel_size,
+                stride=1,
+                padding=(kernel_size - 1) // 2,
+            ),
         )
 
     def forward(self, inputs: Tensor) -> Tensor:
         return inputs + self.sequential(inputs).transpose(1, 2)
+
 
 class ConvModule_Gating(nn.Module):
     """
@@ -405,23 +443,33 @@ class ConvModule_Gating(nn.Module):
     Outputs: outputs
         outputs (batch, time, dim): Tensor produces by conformer convolution module.
     """
+
     def __init__(
-            self,
-            in_channels: int,
-            kernel_size: int = 20, 
-            expansion_factor: int = 2,
-            dropout_p: float = 0.1,
+        self,
+        in_channels: int,
+        kernel_size: int = 20,
+        expansion_factor: int = 2,
+        dropout_p: float = 0.1,
     ) -> None:
         super(ConvModule_Gating, self).__init__()
-        assert (kernel_size - 1) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
+        assert (
+            kernel_size - 1
+        ) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
         assert expansion_factor == 2, "Currently, Only Supports expansion_factor 2"
         self.sequential = nn.Sequential(
             Transpose(shape=(1, 2)),
-            DepthwiseConv1d(in_channels, in_channels, kernel_size, stride=1, padding=(kernel_size - 1) // 2),
+            DepthwiseConv1d(
+                in_channels,
+                in_channels,
+                kernel_size,
+                stride=1,
+                padding=(kernel_size - 1) // 2,
+            ),
         )
 
     def forward(self, inputs: Tensor) -> Tensor:
         return inputs * self.sequential(inputs).transpose(1, 2)
+
 
 class Conformer_ConvModule(nn.Module):
     """
@@ -437,23 +485,38 @@ class Conformer_ConvModule(nn.Module):
     Outputs: outputs
         outputs (batch, dim, time): Tensor produces by conformer convolution module.
     """
+
     def __init__(
-            self,
-            in_channels: int,
-            kernel_size: int = 21,
-            expansion_factor: int = 2,
-            dropout_p: float = 0.1,
+        self,
+        in_channels: int,
+        kernel_size: int = 21,
+        expansion_factor: int = 2,
+        dropout_p: float = 0.1,
     ) -> None:
         super(Conformer_ConvModule, self).__init__()
-        assert (kernel_size - 1) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
+        assert (
+            kernel_size - 1
+        ) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
         assert expansion_factor == 2, "Currently, Only Supports expansion_factor 2"
 
         self.sequential = nn.Sequential(
-            select_norm('ln',in_channels,3),
-            PointwiseConv1d(in_channels, in_channels * expansion_factor, stride=1, padding=0, bias=True),
+            select_norm("ln", in_channels, 3),
+            PointwiseConv1d(
+                in_channels,
+                in_channels * expansion_factor,
+                stride=1,
+                padding=0,
+                bias=True,
+            ),
             GLU(dim=1),
-            DepthwiseConv1d(in_channels, in_channels, kernel_size, stride=1, padding=(kernel_size - 1) // 2),
-            select_norm('bn',in_channels,3),
+            DepthwiseConv1d(
+                in_channels,
+                in_channels,
+                kernel_size,
+                stride=1,
+                padding=(kernel_size - 1) // 2,
+            ),
+            select_norm("bn", in_channels, 3),
             Swish(),
             PointwiseConv1d(in_channels, in_channels, stride=1, padding=0, bias=True),
             nn.Dropout(p=dropout_p),
@@ -461,6 +524,7 @@ class Conformer_ConvModule(nn.Module):
 
     def forward(self, inputs: Tensor) -> Tensor:
         return inputs + self.sequential(inputs)
+
 
 class FeedForwardModule(nn.Module):
     """
@@ -476,11 +540,12 @@ class FeedForwardModule(nn.Module):
     Outputs: outputs
         - **outputs** (batch, time, dim): Tensor produces by feed forward module.
     """
+
     def __init__(
-            self,
-            encoder_dim: int = 512,
-            expansion_factor: int = 4,
-            dropout_p: float = 0.1,
+        self,
+        encoder_dim: int = 512,
+        expansion_factor: int = 4,
+        dropout_p: float = 0.1,
     ) -> None:
         super(FeedForwardModule, self).__init__()
         self.sequential = nn.Sequential(
