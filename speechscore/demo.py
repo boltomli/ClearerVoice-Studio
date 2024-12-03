@@ -22,7 +22,7 @@ if __name__ == '__main__':
     # - return_mean (bool): set True to specify that the mean score for each metric should be returned
 
     
-    print('score for a signle wav file')
+    print('score for a single wav file')
     scores = mySpeechScore(test_path='audios/noisy.wav', reference_path='audios/clean.wav', window=None, score_rate=16000, return_mean=False)
     # Pretty-print the resulting scores in a readable format
     pprint.pprint(scores)

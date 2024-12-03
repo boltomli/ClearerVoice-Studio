@@ -102,7 +102,7 @@ class ScoresList:
         # Loop through the list of found audio file paths
         for audio_path in path_list:
             # Split the file path by '/' and append the last element (the file name) to the audio_list
-            audio_path_s = audio_path.split('/')
+            audio_path_s = audio_path.replace('\\', '/').split('/')
             audio_list.append(audio_path_s[-1])
 
         # Return the list of audio file names

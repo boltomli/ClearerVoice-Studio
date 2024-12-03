@@ -81,7 +81,7 @@ if __name__ == '__main__':
     # - return_mean (bool): set True to specify that the mean score for each metric should be returned
 
     
-    print('score for a signle wav file')
+    print('score for a single wav file')
     scores = mySpeechScore(test_path='audios/noisy.wav', reference_path='audios/clean.wav', window=None, score_rate=16000, return_mean=False)
     # Pretty-print the resulting scores in a readable format
     pprint.pprint(scores)
@@ -98,7 +98,7 @@ if __name__ == '__main__':
 The results should be looking like below:
 
 ```sh
-score for a signle wav file
+score for a single wav file
 {'BSSEval': {'ISR': 22.74466768594831,
              'SAR': -0.1921607960486258,
              'SDR': -0.23921670199308115},
