@@ -1,15 +1,17 @@
 import torch
 import torch.nn as nn
 
+import numpy as np
+import math
 
 class Loss_Softmax(nn.Module):
     def __init__(self):
         super(Loss_Softmax, self).__init__()
-        self.criterion = torch.nn.CrossEntropyLoss()
-        print("Initialised Softmax Loss")
+        self.criterion  = torch.nn.CrossEntropyLoss()
+        print('Initialised Softmax Loss')
 
     def forward(self, x, label=None):
-        nloss = self.criterion(x, label)
+        nloss   = self.criterion(x, label)
 
         prec1, _ = accuracy(x.detach().cpu(), label.detach().cpu(), topk=(1, 5))
         return nloss, prec1

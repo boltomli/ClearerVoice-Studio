@@ -1,9 +1,10 @@
-import math
-
 import torch
-import torch.distributed as dist
+import torch.nn as nn
 import torch.utils.data as data
+import torch.distributed as dist
 
+import math
+import numpy as np
 
 class DistributedSampler(data.Sampler):
     def __init__(self, dataset, num_replicas=None, rank=None, shuffle=True, seed=0):
@@ -30,23 +31,18 @@ class DistributedSampler(data.Sampler):
             g = torch.Generator()
             g.manual_seed(self.seed + self.epoch)
             # indices = torch.randperm(len(self.dataset), generator=g).tolist()
-            ind = (
-                torch.randperm(int(len(self.dataset) / self.num_replicas), generator=g)
-                * self.num_replicas
-            )
+            ind = torch.randperm(int(len(self.dataset)/self.num_replicas), generator=g)*self.num_replicas
             indices = []
             for i in range(self.num_replicas):
-                indices = indices + (ind + i).tolist()
+                indices = indices + (ind+i).tolist()
         else:
             indices = list(range(len(self.dataset)))
         # add extra samples to make it evenly divisible
-        indices += indices[: (self.total_size - len(indices))]
+        indices += indices[:(self.total_size - len(indices))]
         assert len(indices) == self.total_size
         # subsample
         # indices = indices[self.rank:self.total_size:self.num_replicas]
-        indices = indices[
-            self.rank * self.num_samples : (self.rank + 1) * self.num_samples
-        ]
+        indices = indices[self.rank*self.num_samples:(self.rank+1)*self.num_samples]
         assert len(indices) == self.num_samples
         return iter(indices)
 

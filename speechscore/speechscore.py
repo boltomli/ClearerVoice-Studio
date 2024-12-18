@@ -1,26 +1,24 @@
 import os
-
 import librosa
-import numpy as np
-import resampy
 import soundfile as sf
+import resampy
+import numpy as np
+from scores.srmr.srmr import SRMR
+from scores.dnsmos.dnsmos import DNSMOS
+from scores.pesq import PESQ
+from scores.nb_pesq import NB_PESQ
+from scores.sisdr import SISDR
+from scores.stoi import STOI
+from scores.fwsegsnr import FWSEGSNR
+from scores.lsd import LSD
 from scores.bsseval import BSSEval
+from scores.snr import SNR
+from scores.ssnr import SSNR
+from scores.llr import LLR
+from scores.csig import CSIG
 from scores.cbak import CBAK
 from scores.covl import COVL
-from scores.csig import CSIG
-from scores.dnsmos.dnsmos import DNSMOS
-from scores.fwsegsnr import FWSEGSNR
-from scores.llr import LLR
-from scores.lsd import LSD
 from scores.mcd import MCD
-from scores.nb_pesq import NB_PESQ
-from scores.pesq import PESQ
-from scores.sisdr import SISDR
-from scores.snr import SNR
-from scores.srmr.srmr import SRMR
-from scores.ssnr import SSNR
-from scores.stoi import STOI
-
 
 def compute_mean_results(*results):
     mean_result = {}
@@ -37,7 +35,6 @@ def compute_mean_results(*results):
 
     return mean_result
 
-
 class ScoresList:
     def __init__(self):
         self.scores = []
@@ -47,11 +44,9 @@ class ScoresList:
         return self
 
     def __str__(self):
-        return "Scores: " + " ".join([x.name for x in self.scores])
+        return 'Scores: ' + ' '.join([x.name for x in self.scores])
 
-    def __call__(
-        self, test_path, reference_path, window=None, score_rate=None, return_mean=False
-    ):
+    def __call__(self, test_path, reference_path, window=None, score_rate=None, return_mean=False):
         """
         window: float
             the window length in seconds to use for scoring the files.
@@ -59,27 +54,24 @@ class ScoresList:
             the sampling rate specified for scoring the files.
         """
         if test_path is None:
-            print("Please provide audio path for test_path")
+            print(f'Please provide audio path for test_path')
             return
         results = {}
-
+             
         if os.path.isdir(test_path):
             audio_list = self.get_audio_list(test_path)
-            if audio_list is None:
-                return
+            if audio_list is None: return
             for audio_id in audio_list:
-                results_id = {}
+                results_id = {}                
                 if reference_path is not None:
-                    data = self.audio_reader(
-                        test_path + "/" + audio_id, reference_path + "/" + audio_id
-                    )
+                    data = self.audio_reader(test_path+'/'+audio_id, reference_path+'/'+audio_id)
                 else:
-                    data = self.audio_reader(test_path + "/" + audio_id, None)
+                    data = self.audio_reader(test_path+'/'+audio_id, None)
                 for score in self.scores:
                     result_score = score.scoring(data, window, score_rate)
                     results_id[score.name] = result_score
                 results[audio_id] = results_id
-        else:
+        else:            
             data = self.audio_reader(test_path, reference_path)
             for score in self.scores:
                 result_score = score.scoring(data, window, score_rate)
@@ -87,7 +79,7 @@ class ScoresList:
 
         if return_mean:
             mean_result = compute_mean_results(*results.values())
-            results["Mean_Score"] = mean_result
+            results['Mean_Score'] = mean_result
 
         return results
 
@@ -104,13 +96,13 @@ class ScoresList:
 
         # If no audio files are found at all, print an error message and return None
         if len(path_list) == 0:
-            print(f"No audio files found in {path}, scoring ended!")
+            print(f'No audio files found in {path}, scoring ended!')
             return None
 
         # Loop through the list of found audio file paths
         for audio_path in path_list:
             # Split the file path by '/' and append the last element (the file name) to the audio_list
-            audio_path_s = audio_path.replace("\\", "/").split("/")
+            audio_path_s = audio_path.replace('\\', '/').split('/')
             audio_list.append(audio_path_s[-1])
 
         # Return the list of audio file names
@@ -118,7 +110,7 @@ class ScoresList:
 
     def audio_reader(self, test_path, reference_path):
         """loading sound files and making sure they all have the same lengths
-        (zero-padding to the largest). Also works with numpy arrays.
+            (zero-padding to the largest). Also works with numpy arrays.
         """
         data = {}
         audios = []
@@ -151,17 +143,16 @@ class ScoresList:
         for index, audio in enumerate(audios):
             if audio.shape[0] != maxlen:
                 new = np.zeros((maxlen,))
-                new[: audio.shape[0]] = audio[..., 0]
+                new[:audio.shape[0]] = audio[...,0]
                 audios[index] = new
             else:
-                audios[index] = audio[..., 0]
-        data["audio"] = audios
-        data["rate"] = rate
+                audios[index] = audio[...,0]
+        data['audio'] = audios
+        data['rate'] = rate
         return data
 
-
-def SpeechScore(scores=""):
-    """Load the desired scores inside a Metrics object that can then
+def SpeechScore(scores=''):
+    """ Load the desired scores inside a Metrics object that can then
     be called to compute all the desired scores.
 
     Parameters:
@@ -182,38 +173,38 @@ def SpeechScore(scores=""):
 
     score_cls = ScoresList()
     for score in scores:
-        if score.lower() == "srmr":
+        if score.lower() == 'srmr':
             score_cls += SRMR()
-        elif score.lower() == "pesq":
+        elif score.lower() == 'pesq':
             score_cls += PESQ()
-        elif score.lower() == "nb_pesq":
+        elif score.lower() == 'nb_pesq':
             score_cls += NB_PESQ()
-        elif score.lower() == "stoi":
+        elif score.lower() == 'stoi':
             score_cls += STOI()
-        elif score.lower() == "sisdr":
+        elif score.lower() == 'sisdr':
             score_cls += SISDR()
-        elif score.lower() == "fwsegsnr":
+        elif score.lower() == 'fwsegsnr':
             score_cls += FWSEGSNR()
-        elif score.lower() == "lsd":
+        elif score.lower() == 'lsd':
             score_cls += LSD()
-        elif score.lower() == "bsseval":
+        elif score.lower() == 'bsseval':
             score_cls += BSSEval()
-        elif score.lower() == "dnsmos":
+        elif score.lower() == 'dnsmos':
             score_cls += DNSMOS()
-        elif score.lower() == "snr":
+        elif score.lower() == 'snr':
             score_cls += SNR()
-        elif score.lower() == "ssnr":
+        elif score.lower() == 'ssnr':
             score_cls += SSNR()
-        elif score.lower() == "llr":
+        elif score.lower() == 'llr':
             score_cls += LLR()
-        elif score.lower() == "csig":
+        elif score.lower() == 'csig':
             score_cls += CSIG()
-        elif score.lower() == "cbak":
+        elif score.lower() == 'cbak':
             score_cls += CBAK()
-        elif score.lower() == "covl":
+        elif score.lower() == 'covl':
             score_cls += COVL()
-        elif score.lower() == "mcd":
+        elif score.lower() == 'mcd':
             score_cls += MCD()
         else:
-            print("score is pending implementation...")
+           print('score is pending implementation...')
     return score_cls

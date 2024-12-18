@@ -1,7 +1,7 @@
-import librosa
+import torch
 import numpy as np
 import soundfile
-import torch
+import librosa
 import torch.nn.functional as F
 
 
@@ -16,9 +16,7 @@ def cut_padding(y, required_length, random_state, deterministic=False):
         if deterministic:
             pad_left = 0
         else:
-            pad_left = random_state.randint(
-                required_length - audio_length + 1
-            )  # 0 ~ 50 random
+            pad_left = random_state.randint(required_length - audio_length + 1)  # 0 ~ 50 random
         pad_right = required_length - audio_length - pad_left  # 50~ 0
 
         if isinstance(y, list):
@@ -44,14 +42,8 @@ def cut_padding(y, required_length, random_state, deterministic=False):
 
 def load_audio(path, sample_rate, assert_sr=False, channel=None):
     if path[-3:] == "pcm":
-        audio, sr = soundfile.read(
-            path,
-            format="RAW",
-            samplerate=16000,
-            channels=1,
-            subtype="PCM_16",
-            dtype="float32",
-        )
+        audio, sr = soundfile.read(path, format="RAW", samplerate=16000, channels=1, subtype="PCM_16",
+                                   dtype="float32")
     else:
         audio, sr = soundfile.read(path, dtype="float32")
 
@@ -73,7 +65,6 @@ def load_audio(path, sample_rate, assert_sr=False, channel=None):
 
     return dict(audio=audio, path=path)  # channel x samples
 
-
 def get_audio_by_magphase(mag, phase, hop_length, n_fft, length=None):
     # mag : channel x freq x time
     # phase : channel x freq x time
@@ -89,7 +80,7 @@ def _get_time_values(sig_length, sr, hop):
     Get the time axis values given the signal length, sample
     rate and hop size.
     """
-    return torch.linspace(0, sig_length / sr, sig_length // hop + 1)
+    return torch.linspace(0, sig_length/sr, sig_length//hop+1)
 
 
 def _get_freq_values(n_fft, sr):
@@ -97,7 +88,7 @@ def _get_freq_values(n_fft, sr):
     Get the frequency axis values given the number of FFT bins
     and sample rate.
     """
-    return torch.linspace(0, sr / 2, n_fft // 2 + 1)
+    return torch.linspace(0, sr/2, n_fft//2 + 1)
 
 
 def get_spectrogram_axis(sig_length, sr, n_fft=2048, hop=512):
@@ -106,16 +97,8 @@ def get_spectrogram_axis(sig_length, sr, n_fft=2048, hop=512):
     return t, f
 
 
-def istft(
-    stft_matrix,
-    hop_length=None,
-    win_length=None,
-    window="hann",
-    center=True,
-    normalized=False,
-    onesided=True,
-    length=None,
-):
+def istft(stft_matrix, hop_length=None, win_length=None, window='hann',
+          center=True, normalized=False, onesided=True, length=None):
     # keunwoochoi's implementation
     # https://gist.github.com/keunwoochoi/2f349e72cc941f6f10d4adf9b0d3f37e
 
@@ -127,10 +110,10 @@ def istft(
         - normalize by sum of squared window --> do we need it here?
         Actually the result is ok by simply dividing y by 2.
     """
-    assert normalized is False
-    assert onesided is True
+    assert normalized == False
+    assert onesided == True
     assert window == "hann"
-    assert center is True
+    assert center == True
 
     device = stft_matrix.device
     n_fft = 2 * (stft_matrix.shape[-3] - 1)
@@ -156,9 +139,9 @@ def istft(
         iffted = torch.irfft(spec, signal_ndim=1, signal_sizes=(win_length,))
 
         ytmp = istft_window * iffted
-        y[:, sample : (sample + n_fft)] += ytmp
+        y[:, sample:(sample + n_fft)] += ytmp
 
-    y = y[:, n_fft // 2 :]
+    y = y[:, n_fft // 2:]
 
     if length is not None:
         if y.shape[1] > length:
@@ -167,9 +150,8 @@ def istft(
             y = F.pad(y, (0, length - y.shape[1]))
             # y = torch.cat((y[:, :length], torch.zeros(y.shape[0], length - y.shape[1])))
 
-    coeff = (
-        n_fft / float(hop_length) / 2.0
-    )  # -> this might go wrong if curretnly asserted values (especially, `normalized`) changes.
+    coeff = n_fft / float(
+        hop_length) / 2.0  # -> this might go wrong if curretnly asserted values (especially, `normalized`) changes.
     return y / coeff
 
 
@@ -177,15 +159,15 @@ def angle(tensor):
     """
     Return angle of a complex tensor with shape (*, 2).
     """
-    return torch.atan2(tensor[..., 1], tensor[..., 0])
+    return torch.atan2(tensor[...,1], tensor[...,0])
 
 
-def magphase(spec, power=1.0):
+def magphase(spec, power=1.):
     """
     Separate a complex-valued spectrogram with shape (*,2)
     into its magnitude and phase.
     """
-    mag = spec.pow(2).sum(-1).pow(power / 2)
+    mag = spec.pow(2).sum(-1).pow(power/2)
     phase = angle(spec)
     return mag, phase
 
@@ -203,5 +185,5 @@ def realimag(mag, phase):
 def get_snr(y, z):
     y_power = y.pow(2).mean(dim=-1)
     z_power = z.pow(2).mean(dim=-1)
-    snr = 20 * torch.log10(y_power / z_power)
+    snr = 20*torch.log10(y_power/z_power)
     return snr

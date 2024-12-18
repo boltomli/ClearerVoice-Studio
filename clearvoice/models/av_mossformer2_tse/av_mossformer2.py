@@ -1,26 +1,21 @@
-import math
-
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.av_mossformer2_tse.visual_frontend import Visual_encoder
+import torchaudio
+
+import math
 
 from .mossformer.utils.one_path_flash_fsmn import Dual_Path_Model, SBFLASHBlock_DualA
+from models.av_mossformer2_tse.visual_frontend import Visual_encoder
 
 EPS = 1e-8
-
 
 class Mossformer(nn.Module):
     def __init__(self, args):
         super(Mossformer, self).__init__()
-
-        (
-            N,
-            L,
-        ) = (
-            args.network_audio.encoder_out_nchannels,
-            args.network_audio.encoder_kernel_size,
-        )
+        
+        N, L, = args.network_audio.encoder_out_nchannels, args.network_audio.encoder_kernel_size
 
         self.encoder = Encoder(L, N)
         self.separator = Separator(args)
@@ -46,7 +41,6 @@ class Mossformer(nn.Module):
         T_conv = est_source.size(-1)
         est_source = F.pad(est_source, (0, T_origin - T_conv))
         return est_source
-
 
 class Encoder(nn.Module):
     def __init__(self, L, N):
@@ -81,25 +75,20 @@ class Decoder(nn.Module):
             est_source: [M, C, T]
         """
         est_source = mixture_w * est_mask
-        est_source = torch.transpose(est_source, 2, 1)  # [M,  K, N]
+        est_source = torch.transpose(est_source, 2, 1) # [M,  K, N]
         est_source = self.basis_signals(est_source)  # [M,  K, L]
-        est_source = overlap_and_add(est_source, self.L // 2)  # M x C x T
+        est_source = overlap_and_add(est_source, self.L//2) # M x C x T
         return est_source
+
+
 
 
 class Separator(nn.Module):
     def __init__(self, args):
         super(Separator, self).__init__()
 
-        self.layer_norm = nn.GroupNorm(
-            1, args.network_audio.encoder_out_nchannels, eps=1e-8
-        )
-        self.bottleneck_conv1x1 = nn.Conv1d(
-            args.network_audio.encoder_out_nchannels,
-            args.network_audio.encoder_out_nchannels,
-            1,
-            bias=False,
-        )
+        self.layer_norm = nn.GroupNorm(1, args.network_audio.encoder_out_nchannels, eps=1e-8)
+        self.bottleneck_conv1x1 = nn.Conv1d(args.network_audio.encoder_out_nchannels, args.network_audio.encoder_out_nchannels, 1, bias=False)
 
         # mossformer 2
         intra_model = SBFLASHBlock_DualA(
@@ -109,7 +98,7 @@ class Separator(nn.Module):
             d_ffn=args.network_audio.intra_dffn,
             dropout=args.network_audio.intra_dropout,
             use_positional_encoding=args.network_audio.intra_use_positional,
-            norm_before=args.network_audio.intra_norm_before,
+            norm_before=args.network_audio.intra_norm_before
         )
 
         self.masknet = Dual_Path_Model(
@@ -121,16 +110,12 @@ class Separator(nn.Module):
             K=args.network_audio.masknet_chunksize,
             num_spks=args.network_audio.masknet_numspks,
             skip_around_intra=args.network_audio.masknet_extraskipconnection,
-            linear_layer_after_inter_intra=args.network_audio.masknet_useextralinearlayer,
+            linear_layer_after_inter_intra=args.network_audio.masknet_useextralinearlayer
         )
 
         # reference
-        self.av_conv = nn.Conv1d(
-            args.network_audio.encoder_out_nchannels + args.network_reference.emb_size,
-            args.network_audio.encoder_out_nchannels,
-            1,
-            bias=True,
-        )
+        self.av_conv = nn.Conv1d(args.network_audio.encoder_out_nchannels+args.network_reference.emb_size, args.network_audio.encoder_out_nchannels, 1, bias=True)
+
 
     def forward(self, x, visual):
         """
@@ -145,15 +130,17 @@ class Separator(nn.Module):
         x = self.layer_norm(x)
         x = self.bottleneck_conv1x1(x)
 
-        visual = F.interpolate(visual, (D), mode="linear")
-        x = torch.cat((x, visual), 1)
-        x = self.av_conv(x)
+
+        visual = F.interpolate(visual, (D), mode='linear')
+        x = torch.cat((x, visual),1)
+        x  = self.av_conv(x)
 
         x = self.masknet(x)
 
         x = x.squeeze(0)
 
         return x
+
 
 
 def overlap_and_add(signal, frame_step):
@@ -186,9 +173,7 @@ def overlap_and_add(signal, frame_step):
 
     subframe_signal = signal.view(*outer_dimensions, -1, subframe_length)
 
-    frame = torch.arange(0, output_subframes).unfold(
-        0, subframes_per_frame, subframe_step
-    )
+    frame = torch.arange(0, output_subframes).unfold(0, subframes_per_frame, subframe_step)
     frame = signal.new_tensor(frame).long().cuda()  # signal may in GPU or CPU
     frame = frame.contiguous().view(-1)
 
@@ -201,7 +186,7 @@ def overlap_and_add(signal, frame_step):
 class av_mossformer2(nn.Module):
     def __init__(self, args):
         super(av_mossformer2, self).__init__()
-        args.causal = 0
+        args.causal=0
         self.sep_network = Mossformer(args)
         self.ref_encoder = Visual_encoder(args)
 

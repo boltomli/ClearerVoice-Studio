@@ -1,26 +1,27 @@
+from models.mossformer_gan.fsmn import UniDeepFsmn
+from models.mossformer_gan.conv_module import ConvModule
+from models.mossformer_gan.mossformer import MossFormer
+from models.mossformer_gan.se_layer import SELayer
+from models.mossformer_gan.get_layer_from_string import get_layer
+from models.mossformer_gan.discriminator import Discriminator
 import math
+from collections import OrderedDict
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.mossformer_gan.conv_module import ConvModule
-from models.mossformer_gan.discriminator import Discriminator
-from models.mossformer_gan.fsmn import UniDeepFsmn
-from models.mossformer_gan.get_layer_from_string import get_layer
-from models.mossformer_gan.mossformer import MossFormer
-from models.mossformer_gan.se_layer import SELayer
 from packaging.version import parse as V
 from torch.nn import init
 from torch.nn.parameter import Parameter
 
 is_torch_1_9_plus = V(torch.__version__) >= V("1.9.0")
 
-
 class MossFormerGAN_SE_16K(nn.Module):
     def __init__(self, args):
         super(MossFormerGAN_SE_16K, self).__init__()
-        self.model = SyncANet(num_channel=64, num_features=args.fft_len // 2 + 1)
-        if args.mode == "train":
+        self.model = SyncANet(num_channel=64, num_features=args.fft_len//2+1)
+        if args.mode == 'train':
             self.discriminator = Discriminator(ndf=16)
         else:
             self.discriminator = None
@@ -28,7 +29,6 @@ class MossFormerGAN_SE_16K(nn.Module):
     def forward(self, x):
         output_real, output_imag = model(x)
         return output_real, output_imag
-
 
 class FSMN_Wrap(nn.Module):
 
@@ -39,10 +39,10 @@ class FSMN_Wrap(nn.Module):
 
     def forward(self, x):
         # # shpae of input x : [b,c,h,T,2], [6, 256, 1, 106]
-        b, c, T, h = x.size()
-        # x : [b,T,h,c]
+        b,c,T,h = x.size()
+        #x : [b,T,h,c]
         x = x.permute(0, 2, 3, 1)
-        x = torch.reshape(x, (b * T, h, c))
+        x = torch.reshape(x, (b*T, h, c))
 
         output = self.fsmn(x)
         # output: [b*T,h,c], [6*106, h, 256]
@@ -52,58 +52,33 @@ class FSMN_Wrap(nn.Module):
 
         return output.permute(0, 3, 1, 2)
 
-
 class DilatedDenseNet(nn.Module):
     def __init__(self, depth=4, in_channels=64):
         super(DilatedDenseNet, self).__init__()
         self.depth = depth
         self.in_channels = in_channels
-        self.pad = nn.ConstantPad2d((1, 1, 1, 0), value=0.0)
+        self.pad = nn.ConstantPad2d((1, 1, 1, 0), value=0.)
         self.twidth = 2
         self.kernel_size = (self.twidth, 3)
         for i in range(self.depth):
-            dil = 2**i
+            dil = 2 ** i
             pad_length = self.twidth + (dil - 1) * (self.twidth - 1) - 1
-            setattr(
-                self,
-                "pad{}".format(i + 1),
-                nn.ConstantPad2d((1, 1, pad_length, 0), value=0.0),
-            )
-            setattr(
-                self,
-                "conv{}".format(i + 1),
-                nn.Conv2d(
-                    self.in_channels * (i + 1),
-                    self.in_channels,
-                    kernel_size=self.kernel_size,
-                    dilation=(dil, 1),
-                ),
-            )
-            setattr(
-                self,
-                "norm{}".format(i + 1),
-                nn.InstanceNorm2d(in_channels, affine=True),
-            )
-            setattr(self, "prelu{}".format(i + 1), nn.PReLU(self.in_channels))
-            setattr(
-                self,
-                "fsmn{}".format(i + 1),
-                FSMN_Wrap(
-                    nIn=self.in_channels,
-                    nHidden=self.in_channels,
-                    lorder=5,
-                    nOut=self.in_channels,
-                ),
-            )
+            setattr(self, 'pad{}'.format(i + 1), nn.ConstantPad2d((1, 1, pad_length, 0), value=0.))
+            setattr(self, 'conv{}'.format(i + 1),
+                    nn.Conv2d(self.in_channels * (i + 1), self.in_channels, kernel_size=self.kernel_size,
+                              dilation=(dil, 1)))
+            setattr(self, 'norm{}'.format(i + 1), nn.InstanceNorm2d(in_channels, affine=True))
+            setattr(self, 'prelu{}'.format(i + 1), nn.PReLU(self.in_channels))
+            setattr(self, 'fsmn{}'.format(i + 1), FSMN_Wrap(nIn=self.in_channels, nHidden=self.in_channels, lorder=5, nOut=self.in_channels))
 
     def forward(self, x):
         skip = x
         for i in range(self.depth):
-            out = getattr(self, "pad{}".format(i + 1))(skip)
-            out = getattr(self, "conv{}".format(i + 1))(out)
-            out = getattr(self, "norm{}".format(i + 1))(out)
-            out = getattr(self, "prelu{}".format(i + 1))(out)
-            out = getattr(self, "fsmn{}".format(i + 1))(out)
+            out = getattr(self, 'pad{}'.format(i + 1))(skip)
+            out = getattr(self, 'conv{}'.format(i + 1))(out)
+            out = getattr(self, 'norm{}'.format(i + 1))(out)
+            out = getattr(self, 'prelu{}'.format(i + 1))(out)
+            out = getattr(self, 'fsmn{}'.format(i + 1))(out)
             skip = torch.cat([out, skip], dim=1)
         return out
 
@@ -114,13 +89,13 @@ class DenseEncoder(nn.Module):
         self.conv_1 = nn.Sequential(
             nn.Conv2d(in_channel, channels, (1, 1), (1, 1)),
             nn.InstanceNorm2d(channels, affine=True),
-            nn.PReLU(channels),
+            nn.PReLU(channels)
         )
         self.dilated_dense = DilatedDenseNet(depth=4, in_channels=channels)
         self.conv_2 = nn.Sequential(
             nn.Conv2d(channels, channels, (1, 3), (1, 2), padding=(0, 1)),
             nn.InstanceNorm2d(channels, affine=True),
-            nn.PReLU(channels),
+            nn.PReLU(channels)
         )
 
     def forward(self, x):
@@ -129,15 +104,12 @@ class DenseEncoder(nn.Module):
         x = self.conv_2(x)
         return x
 
-
 class SPConvTranspose2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, r=1):
         super(SPConvTranspose2d, self).__init__()
-        self.pad1 = nn.ConstantPad2d((1, 1, 0, 0), value=0.0)
+        self.pad1 = nn.ConstantPad2d((1, 1, 0, 0), value=0.)
         self.out_channels = out_channels
-        self.conv = nn.Conv2d(
-            in_channels, out_channels * r, kernel_size=kernel_size, stride=(1, 1)
-        )
+        self.conv = nn.Conv2d(in_channels, out_channels * r, kernel_size=kernel_size, stride=(1, 1))
         self.r = r
 
     def forward(self, x):
@@ -199,26 +171,22 @@ class SyncANet(nn.Module):
                     emb_dim=num_channel,
                     emb_ks=2,
                     emb_hs=1,
-                    n_freqs=int(num_features // 2) + 1,
-                    hidden_channels=num_channel * 2,
+                    n_freqs=int(num_features//2)+1,
+                    hidden_channels=num_channel*2,
                     n_head=4,
                     approx_qk_dim=512,
-                    activation="prelu",
+                    activation='prelu',
                     eps=1.0e-5,
                 )
             )
 
-        self.mask_decoder = MaskDecoder(
-            num_features, num_channel=num_channel, out_channel=1
-        )
+        self.mask_decoder = MaskDecoder(num_features, num_channel=num_channel, out_channel=1)
         self.complex_decoder = ComplexDecoder(num_channel=num_channel)
 
     def forward(self, x):
         out_list = []
-        mag = torch.sqrt(x[:, 0, :, :] ** 2 + x[:, 1, :, :] ** 2).unsqueeze(1)
-        noisy_phase = torch.angle(
-            torch.complex(x[:, 0, :, :], x[:, 1, :, :])
-        ).unsqueeze(1)
+        mag = torch.sqrt(x[:, 0, :, :]**2 + x[:, 1, :, :]**2).unsqueeze(1)
+        noisy_phase = torch.angle(torch.complex(x[:, 0, :, :], x[:, 1, :, :])).unsqueeze(1)
         x_in = torch.cat([mag, x], dim=1)
 
         x = self.dense_encoder(x_in)
@@ -238,18 +206,22 @@ class SyncANet(nn.Module):
 
         return out_list
 
-
 class FFConvM(nn.Module):
-    def __init__(self, dim_in, dim_out, norm_klass=nn.LayerNorm, dropout=0.1):
+    def __init__(
+        self,
+        dim_in,
+        dim_out,
+        norm_klass = nn.LayerNorm,
+        dropout = 0.1
+    ):
         super().__init__()
         self.mdl = nn.Sequential(
             norm_klass(dim_in),
             nn.Linear(dim_in, dim_out),
             nn.SiLU(),
             ConvModule(dim_out),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout)
         )
-
     def forward(
         self,
         x,
@@ -257,14 +229,12 @@ class FFConvM(nn.Module):
         output = self.mdl(x)
         return output
 
-
 class SyncANetBlock(nn.Module):
     """
     The design of this block is partially motivated by TF-GridNet (https://arxiv.org/abs/2211.12433)
     We apply a modided MossFormer module (GatedFormer module) and FSMN moduels instead of RNN modules for computational efficiency and better performance
     Each GatedFormer module applies a triple-attention scheme
     """
-
     def __getitem__(self, key):
         return getattr(self, key)
 
@@ -285,25 +255,21 @@ class SyncANetBlock(nn.Module):
         in_channels = emb_dim * emb_ks
 
         ##intra modules
-        self.Fconv = nn.Conv2d(
-            emb_dim, in_channels, kernel_size=(1, emb_ks), stride=(1, 1), groups=emb_dim
-        )
+        self.Fconv = nn.Conv2d(emb_dim, in_channels, kernel_size=(1, emb_ks), stride=(1,1), groups=emb_dim)
         self.intra_norm = LayerNormalization4D(emb_dim, eps=eps)
         self.intra_to_u = FFConvM(
-            dim_in=in_channels,
-            dim_out=hidden_channels,
-            norm_klass=nn.LayerNorm,
-            dropout=0.1,
-        )
+            dim_in = in_channels,
+            dim_out = hidden_channels,
+            norm_klass = nn.LayerNorm,
+            dropout = 0.1,
+            )
         self.intra_to_v = FFConvM(
-            dim_in=in_channels,
-            dim_out=hidden_channels,
-            norm_klass=nn.LayerNorm,
-            dropout=0.1,
-        )
-        self.intra_rnn = self._build_repeats(
-            in_channels, hidden_channels, 20, hidden_channels, repeats=1
-        )
+            dim_in = in_channels,
+            dim_out = hidden_channels,
+            norm_klass = nn.LayerNorm,
+            dropout = 0.1,
+            )
+        self.intra_rnn = self._build_repeats(in_channels, hidden_channels, 20, hidden_channels, repeats=1)
         self.intra_mossformer = MossFormer(dim=emb_dim, group_size=n_freqs)
 
         self.intra_linear = nn.ConvTranspose1d(
@@ -314,20 +280,18 @@ class SyncANetBlock(nn.Module):
         ##inter modules
         self.inter_norm = LayerNormalization4D(emb_dim, eps=eps)
         self.inter_to_u = FFConvM(
-            dim_in=in_channels,
-            dim_out=hidden_channels,
-            norm_klass=nn.LayerNorm,
-            dropout=0.1,
-        )
+            dim_in = in_channels,
+            dim_out = hidden_channels,
+            norm_klass = nn.LayerNorm,
+            dropout = 0.1,
+            )
         self.inter_to_v = FFConvM(
-            dim_in=in_channels,
-            dim_out=hidden_channels,
-            norm_klass=nn.LayerNorm,
-            dropout=0.1,
-        )
-        self.inter_rnn = self._build_repeats(
-            in_channels, hidden_channels, 20, hidden_channels, repeats=1
-        )
+            dim_in = in_channels,
+            dim_out = hidden_channels,
+            norm_klass = nn.LayerNorm,
+            dropout = 0.1,
+            )
+        self.inter_rnn = self._build_repeats(in_channels, hidden_channels, 20, hidden_channels, repeats=1)
         self.inter_mossformer = MossFormer(dim=emb_dim, group_size=256)
 
         self.inter_linear = nn.ConvTranspose1d(
@@ -384,7 +348,7 @@ class SyncANetBlock(nn.Module):
             for i in range(repeats)
         ]
         return nn.Sequential(*repeats)
-
+    
     def forward(self, x):
         """SyncANetBlock Forward.
         Args:
@@ -399,20 +363,20 @@ class SyncANetBlock(nn.Module):
         # intra process
         input_ = x
         intra_rnn = self.intra_norm(input_)  # [B, C, T, Q]
-        intra_rnn = self.Fconv(intra_rnn)  # [B, C*emb_ks, T, Q-emb_ks+1]
+        intra_rnn = self.Fconv(intra_rnn) #[B, C*emb_ks, T, Q-emb_ks+1]
         intra_rnn = (
-            intra_rnn.transpose(1, 2).contiguous().view(B * T, C * self.emb_ks, -1)
+            intra_rnn.transpose(1, 2).contiguous().view(B * T, C*self.emb_ks, -1)
         )  # [BT, C, Q]
 
         intra_rnn = intra_rnn.transpose(1, 2)  # [BT, -1, C*emb_ks]
         intra_rnn_u = self.intra_to_u(intra_rnn)
         intra_rnn_v = self.intra_to_v(intra_rnn)
-        intra_rnn_u = self.intra_rnn(intra_rnn_u)  # [BT, -1, H]
+        intra_rnn_u = self.intra_rnn(intra_rnn_u)  # [BT, -1, H]        
         intra_rnn = intra_rnn_v * intra_rnn_u
         intra_rnn = intra_rnn.transpose(1, 2)  # [BT, H, -1]
         intra_rnn = self.intra_linear(intra_rnn)  # [BT, C, Q]
         intra_rnn = intra_rnn.transpose(1, 2)
-        ##[BT, Q, C]
+        ##[BT, Q, C]        
         intra_rnn = intra_rnn.view([B, T, Q, C])
         intra_rnn = self.intra_mossformer(intra_rnn)
         intra_rnn = intra_rnn.transpose(1, 2)

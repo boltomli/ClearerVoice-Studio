@@ -1,14 +1,12 @@
+import torch.nn as nn
+import torch 
+import torch.nn.functional as F
 import os
 import sys
-
-import torch
-import torch.nn as nn
-
 sys.path.append(os.path.dirname(__file__))
+from .conv_stft import ConvSTFT, ConviSTFT
+import numpy as np
 from models.frcrn.unet import UNet
-
-from .conv_stft import ConviSTFT, ConvSTFT
-
 
 class FRCRN_Wrapper_StandAlone(nn.Module):
     def __init__(self, args):
@@ -22,13 +20,12 @@ class FRCRN_Wrapper_StandAlone(nn.Module):
             win_len=640,
             win_inc=320,
             fft_len=640,
-            win_type="hanning",
+            win_type='hanning'
         )
 
     def forward(self, x):
-        output = self.model(x)
+        output = self.model(x)       
         return output[1][0]
-
 
 class FRCRN_SE_16K(nn.Module):
     def __init__(self, args):
@@ -42,27 +39,15 @@ class FRCRN_SE_16K(nn.Module):
             win_len=args.win_len,
             win_inc=args.win_inc,
             fft_len=args.fft_len,
-            win_type=args.win_type,
+            win_type=args.win_type
         )
 
     def forward(self, x):
         output = self.model(x)
         return output[1][0]
 
-
 class DCCRN(nn.Module):
-    def __init__(
-        self,
-        complex,
-        model_complexity,
-        model_depth,
-        log_amp,
-        padding_mode,
-        win_len=400,
-        win_inc=100,
-        fft_len=512,
-        win_type="hanning",
-    ):
+    def __init__(self, complex, model_complexity, model_depth, log_amp, padding_mode, win_len=400, win_inc=100, fft_len=512, win_type='hanning'):
         """
         :param complex: whether to use complex networks.
         :param model_complexity: only used for model_depth 20
@@ -71,7 +56,7 @@ class DCCRN(nn.Module):
         :param padding_mode: Encoder's convolution filter. 'zeros', 'reflect'
         """
         super().__init__()
-        self.feat_dim = fft_len // 2 + 1
+        self.feat_dim = fft_len // 2 +1
 
         self.win_len = win_len
         self.win_inc = win_inc
@@ -79,36 +64,10 @@ class DCCRN(nn.Module):
         self.win_type = win_type
 
         fix = True
-        self.stft = ConvSTFT(
-            self.win_len,
-            self.win_inc,
-            self.fft_len,
-            self.win_type,
-            feature_type="complex",
-            fix=fix,
-        )
-        self.istft = ConviSTFT(
-            self.win_len,
-            self.win_inc,
-            self.fft_len,
-            self.win_type,
-            feature_type="complex",
-            fix=fix,
-        )
-        self.unet = UNet(
-            1,
-            complex=complex,
-            model_complexity=model_complexity,
-            model_depth=model_depth,
-            padding_mode=padding_mode,
-        )
-        self.unet2 = UNet(
-            1,
-            complex=complex,
-            model_complexity=model_complexity,
-            model_depth=model_depth,
-            padding_mode=padding_mode,
-        )
+        self.stft = ConvSTFT(self.win_len, self.win_inc, self.fft_len, self.win_type, feature_type='complex', fix=fix)
+        self.istft = ConviSTFT(self.win_len, self.win_inc, self.fft_len, self.win_type, feature_type='complex', fix=fix)
+        self.unet = UNet(1, complex=complex, model_complexity=model_complexity, model_depth=model_depth, padding_mode=padding_mode)
+        self.unet2 = UNet(1, complex=complex, model_complexity=model_complexity, model_depth=model_depth, padding_mode=padding_mode)
 
     def forward(self, inputs):
         out_list = []
@@ -117,15 +76,13 @@ class DCCRN(nn.Module):
         # [B, 1, D*2, T]
         cmp_spec = torch.unsqueeze(cmp_spec, 1)
         # to [B, 2, D, T] real_part/imag_part
-        cmp_spec = torch.cat(
-            [
-                cmp_spec[:, :, : self.feat_dim, :],
-                cmp_spec[:, :, self.feat_dim :, :],
-            ],
-            1,
-        )
+        cmp_spec = torch.cat([
+                                cmp_spec[:,:,:self.feat_dim,:],
+                                cmp_spec[:,:,self.feat_dim:,:],
+                                ],
+                                1)
         # [B, 2, D, T]
-        # cmp_spec_orig = cmp_spec.clone()
+        #cmp_spec_orig = cmp_spec.clone()
         cmp_spec = torch.unsqueeze(cmp_spec, 4)
         # [B, 1, D, T, 2]
         cmp_spec = torch.transpose(cmp_spec, 1, 4)
@@ -143,18 +100,16 @@ class DCCRN(nn.Module):
         return out_list
 
     def inference(self, inputs):
-        # cmp_spec: [B, D*2, T]
+        #cmp_spec: [B, D*2, T]
         cmp_spec = self.stft(inputs)
         # [B, 1, D*2, T]
         cmp_spec = torch.unsqueeze(cmp_spec, 1)
         # to [B, 2, D, T] real_part/imag_part
-        cmp_spec = torch.cat(
-            [
-                cmp_spec[:, :, : self.feat_dim, :],
-                cmp_spec[:, :, self.feat_dim :, :],
-            ],
-            1,
-        )
+        cmp_spec = torch.cat([
+                                cmp_spec[:,:,:self.feat_dim,:],
+                                cmp_spec[:,:,self.feat_dim:,:],
+                                ],
+                                1)
         # [B, 2, D, T, 1]
         cmp_spec = torch.unsqueeze(cmp_spec, 4)
         # [B, 1, D, T, 2]
@@ -170,44 +125,31 @@ class DCCRN(nn.Module):
         return est_wav[0]
 
     def apply_mask(self, cmp_spec, cmp_mask):
-        est_spec = torch.cat(
-            [
-                cmp_spec[:, :, :, :, 0] * cmp_mask[:, :, :, :, 0]
-                - cmp_spec[:, :, :, :, 1] * cmp_mask[:, :, :, :, 1],
-                cmp_spec[:, :, :, :, 0] * cmp_mask[:, :, :, :, 1]
-                + cmp_spec[:, :, :, :, 1] * cmp_mask[:, :, :, :, 0],
-            ],
-            1,
-        )
-        est_spec = torch.cat([est_spec[:, 0, :, :], est_spec[:, 1, :, :]], 1)
+        est_spec = torch.cat([cmp_spec[:,:,:,:,0]*cmp_mask[:,:,:,:,0]-cmp_spec[:,:,:,:,1]*cmp_mask[:,:,:,:,1], cmp_spec[:,:,:,:,0]*cmp_mask[:,:,:,:,1]+cmp_spec[:,:,:,:,1]*cmp_mask[:,:,:,:,0]],1)
+        est_spec = torch.cat([est_spec[:,0,:,:], est_spec[:,1,:,:]], 1)
         cmp_mask = torch.squeeze(cmp_mask, 1)
-        cmp_mask = torch.cat([cmp_mask[:, :, :, 0], cmp_mask[:, :, :, 1]], 1)
+        cmp_mask = torch.cat([cmp_mask[:,:,:,0], cmp_mask[:,:,:,1]],1)
         est_wav = self.istft(est_spec)
         est_wav = torch.squeeze(est_wav, 1)
         return est_spec, est_wav, cmp_mask
 
     def get_params(self, weight_decay=0.0):
-        # add L2 penalty
+            # add L2 penalty
         weights, biases = [], []
         for name, param in self.named_parameters():
-            if "bias" in name:
+            if 'bias' in name:
                 biases += [param]
             else:
                 weights += [param]
-        params = [
-            {
-                "params": weights,
-                "weight_decay": weight_decay,
-            },
-            {
-                "params": biases,
-                "weight_decay": 0.0,
-            },
-        ]
-        return params
-
-
-""" 
+        params = [{
+                     'params': weights,
+                     'weight_decay': weight_decay,
+                 }, {
+                     'params': biases,
+                     'weight_decay': 0.0,
+                 }]
+        return params 
+''' 
     #def loss(self, noisy, est, est_wav, labels, cmp_mask, mode='Mix'):
     def loss(self, noisy_wav, clean_wav, out_list, device, mode='Mix'):
         if mode == 'SiSNR':
@@ -326,4 +268,4 @@ def si_snr(s1, s2, eps=1e-8):
 
 #if __name__ == '__main__':
 #    test_DCCRN()
-"""
+'''

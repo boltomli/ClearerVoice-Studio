@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class UniDeepFsmn(nn.Module):
     """
     A single layer Deep Feedforward Sequential Memory Network (FSMN) for unidirectional processing.
@@ -14,7 +13,7 @@ class UniDeepFsmn(nn.Module):
     - lorder (int): Order of the linear filter.
     - hidden_size (int): Number of hidden units in the linear layer.
     """
-
+    
     def __init__(self, input_dim, output_dim, lorder=None, hidden_size=None):
         super(UniDeepFsmn, self).__init__()
 
@@ -32,17 +31,15 @@ class UniDeepFsmn(nn.Module):
         # Projection layer to output space
         self.project = nn.Linear(hidden_size, output_dim, bias=False)
         # Depthwise convolution layer for filtering
-        self.conv1 = nn.Conv2d(
-            output_dim, output_dim, [lorder, 1], [1, 1], groups=output_dim, bias=False
-        )
+        self.conv1 = nn.Conv2d(output_dim, output_dim, [lorder, 1], [1, 1], groups=output_dim, bias=False)
 
     def forward(self, input):
         """
         Forward pass through the UniDeepFsmn model.
-
+        
         Parameters:
         - input (Tensor): Input tensor of shape (batch_size, sequence_length, input_dim).
-
+        
         Returns:
         - Tensor: Output tensor after processing, with the same shape as input.
         """
@@ -88,7 +85,7 @@ class ComplexUniDeepFsmn(nn.Module):
         Forward pass through the ComplexUniDeepFsmn model.
 
         Parameters:
-        - x (Tensor): Input tensor of shape (batch_size, channels, height, time, 2) where
+        - x (Tensor): Input tensor of shape (batch_size, channels, height, time, 2) where 
                       the last dimension represents the real and imaginary parts.
 
         Returns:
@@ -102,7 +99,7 @@ class ComplexUniDeepFsmn(nn.Module):
         # Process the real and imaginary parts
         real_L1 = self.fsmn_re_L1(x[..., 0]) - self.fsmn_im_L1(x[..., 1])
         imaginary_L1 = self.fsmn_re_L1(x[..., 1]) + self.fsmn_im_L1(x[..., 0])
-
+        
         # Process the second layer
         real = self.fsmn_re_L2(real_L1) - self.fsmn_im_L2(imaginary_L1)
         imaginary = self.fsmn_re_L2(imaginary_L1) + self.fsmn_im_L2(real_L1)
@@ -152,9 +149,7 @@ class ComplexUniDeepFsmn_L1(nn.Module):
 
         # Combine results and reshape back to original dimensions
         output = torch.stack((real, imaginary), dim=-1)  # Shape: [b*T, h, c, 2]
-        output = torch.reshape(
-            output, (b, T, h, c, d)
-        )  # Restore shape to [b, T, h, c, 2]
+        output = torch.reshape(output, (b, T, h, c, d))  # Restore shape to [b, T, h, c, 2]
         output = torch.transpose(output, 1, 3)  # Shape: [b, c, h, T, 2]
 
         return output
@@ -169,13 +164,11 @@ class BidirectionalLSTM_L1(nn.Module):
     - nHidden (int): Number of hidden units in the LSTM.
     - nOut (int): Number of output features.
     """
-
+    
     def __init__(self, nIn, nHidden, nOut):
         super(BidirectionalLSTM_L1, self).__init__()
 
-        self.rnn = nn.GRU(
-            nIn, nHidden, bidirectional=False
-        )  # Using GRU instead of LSTM
+        self.rnn = nn.GRU(nIn, nHidden, bidirectional=False)  # Using GRU instead of LSTM
 
     def forward(self, input):
         """
@@ -190,10 +183,9 @@ class BidirectionalLSTM_L1(nn.Module):
         output, _ = self.rnn(input)  # Forward pass through GRU
         return output
 
-
 class BidirectionalLSTM_L2(nn.Module):
     """
-    A unidirectional Long Short-Term Memory (LSTM) network that processes input sequences
+    A unidirectional Long Short-Term Memory (LSTM) network that processes input sequences 
     and produces an output using a linear embedding layer.
 
     Attributes:
@@ -214,7 +206,7 @@ class BidirectionalLSTM_L2(nn.Module):
         Forward pass through the Bidirectional LSTM network.
 
         Args:
-            input (torch.Tensor): Input tensor of shape (T, b, nIn), where T is the sequence length,
+            input (torch.Tensor): Input tensor of shape (T, b, nIn), where T is the sequence length, 
                                   b is the batch size, and nIn is the input feature size.
 
         Returns:
@@ -232,7 +224,7 @@ class BidirectionalLSTM_L2(nn.Module):
 
 class ComplexBidirectionalLSTM(nn.Module):
     """
-    A complex-valued bidirectional LSTM that processes input sequences containing real
+    A complex-valued bidirectional LSTM that processes input sequences containing real 
     and imaginary components, producing a complex-valued output.
 
     Attributes:
@@ -269,7 +261,7 @@ class ComplexBidirectionalLSTM(nn.Module):
         # Get the shape of the input tensor
         b, c, h, T, d = x.size()
         # Reshape the input for processing
-        x = torch.reshape(x, (b, c * h, T, d))
+        x = torch.reshape(x, (b, c*h, T, d))
         # Transpose to prepare for LSTM processing
         x = torch.transpose(x, 0, 2)  # Shape: (T, c*h, d)
         x = torch.transpose(x, 1, 2)  # Shape: (T, d, c*h)
@@ -291,7 +283,7 @@ class ComplexBidirectionalLSTM(nn.Module):
 
 class ComplexConv2d(nn.Module):
     """
-    A complex-valued 2D convolutional layer that processes input tensors with real
+    A complex-valued 2D convolutional layer that processes input tensors with real 
     and imaginary parts, returning a complex output.
 
     Attributes:
@@ -299,50 +291,21 @@ class ComplexConv2d(nn.Module):
         conv_im (nn.Conv2d): Convolutional layer for the imaginary part.
     """
 
-    def __init__(
-        self,
-        in_channel,
-        out_channel,
-        kernel_size,
-        stride=1,
-        padding=0,
-        dilation=1,
-        groups=1,
-        bias=True,
-        **kwargs
-    ):
+    def __init__(self, in_channel, out_channel, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, **kwargs):
         super().__init__()
 
         # Initialize convolutional layers for real and imaginary components
-        self.conv_re = nn.Conv2d(
-            in_channel,
-            out_channel,
-            kernel_size,
-            stride=stride,
-            padding=padding,
-            dilation=dilation,
-            groups=groups,
-            bias=bias,
-            **kwargs
-        )
-        self.conv_im = nn.Conv2d(
-            in_channel,
-            out_channel,
-            kernel_size,
-            stride=stride,
-            padding=padding,
-            dilation=dilation,
-            groups=groups,
-            bias=bias,
-            **kwargs
-        )
+        self.conv_re = nn.Conv2d(in_channel, out_channel, kernel_size, stride=stride, padding=padding,
+                                 dilation=dilation, groups=groups, bias=bias, **kwargs)
+        self.conv_im = nn.Conv2d(in_channel, out_channel, kernel_size, stride=stride, padding=padding,
+                                 dilation=dilation, groups=groups, bias=bias, **kwargs)
 
     def forward(self, x):
         """
         Forward pass through the complex convolutional layer.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch, channel, axis1, axis2, 2)
+            x (torch.Tensor): Input tensor of shape (batch, channel, axis1, axis2, 2) 
                              representing the real and imaginary parts.
 
         Returns:
@@ -351,16 +314,14 @@ class ComplexConv2d(nn.Module):
         # Apply convolution to the real and imaginary parts
         real = self.conv_re(x[..., 0]) - self.conv_im(x[..., 1])
         imaginary = self.conv_re(x[..., 1]) + self.conv_im(x[..., 0])
-        output = torch.stack(
-            (real, imaginary), dim=-1
-        )  # Stack real and imaginary components
+        output = torch.stack((real, imaginary), dim=-1)  # Stack real and imaginary components
 
         return output
 
 
 class ComplexConvTranspose2d(nn.Module):
     """
-    A complex-valued 2D transposed convolutional layer that processes input tensors
+    A complex-valued 2D transposed convolutional layer that processes input tensors 
     with real and imaginary parts, returning a complex output.
 
     Attributes:
@@ -368,53 +329,35 @@ class ComplexConvTranspose2d(nn.Module):
         tconv_im (nn.ConvTranspose2d): Transposed convolutional layer for the imaginary part.
     """
 
-    def __init__(
-        self,
-        in_channel,
-        out_channel,
-        kernel_size,
-        stride=1,
-        padding=0,
-        output_padding=0,
-        dilation=1,
-        groups=1,
-        bias=True,
-        **kwargs
-    ):
+    def __init__(self, in_channel, out_channel, kernel_size, stride=1, padding=0, output_padding=0, dilation=1, groups=1, bias=True, **kwargs):
         super().__init__()
 
         # Initialize transposed convolutional layers for real and imaginary components
-        self.tconv_re = nn.ConvTranspose2d(
-            in_channel,
-            out_channel,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            output_padding=output_padding,
-            groups=groups,
-            bias=bias,
-            dilation=dilation,
-            **kwargs
-        )
-        self.tconv_im = nn.ConvTranspose2d(
-            in_channel,
-            out_channel,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            output_padding=output_padding,
-            groups=groups,
-            bias=bias,
-            dilation=dilation,
-            **kwargs
-        )
+        self.tconv_re = nn.ConvTranspose2d(in_channel, out_channel,
+                                           kernel_size=kernel_size,
+                                           stride=stride,
+                                           padding=padding,
+                                           output_padding=output_padding,
+                                           groups=groups,
+                                           bias=bias,
+                                           dilation=dilation,
+                                           **kwargs)
+        self.tconv_im = nn.ConvTranspose2d(in_channel, out_channel,
+                                           kernel_size=kernel_size,
+                                           stride=stride,
+                                           padding=padding,
+                                           output_padding=output_padding,
+                                           groups=groups,
+                                           bias=bias,
+                                           dilation=dilation,
+                                           **kwargs)
 
     def forward(self, x):
         """
         Forward pass through the complex transposed convolutional layer.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch, channel, axis1, axis2, 2)
+            x (torch.Tensor): Input tensor of shape (batch, channel, axis1, axis2, 2) 
                              representing the real and imaginary parts.
 
         Returns:
@@ -423,16 +366,13 @@ class ComplexConvTranspose2d(nn.Module):
         # Apply transposed convolution to the real and imaginary parts
         real = self.tconv_re(x[..., 0]) - self.tconv_im(x[..., 1])
         imaginary = self.tconv_re(x[..., 1]) + self.tconv_im(x[..., 0])
-        output = torch.stack(
-            (real, imaginary), dim=-1
-        )  # Stack real and imaginary components
+        output = torch.stack((real, imaginary), dim=-1)  # Stack real and imaginary components
 
         return output
 
-
 class ComplexBatchNorm2d(nn.Module):
     """
-    A complex-valued batch normalization layer that normalizes input tensors with
+    A complex-valued batch normalization layer that normalizes input tensors with 
     separate real and imaginary components.
 
     This layer applies batch normalization independently to the real and imaginary parts of the input,
@@ -444,15 +384,8 @@ class ComplexBatchNorm2d(nn.Module):
         bn_im (nn.BatchNorm2d): Batch normalization layer for the imaginary part of the input.
     """
 
-    def __init__(
-        self,
-        num_features,
-        eps=1e-5,
-        momentum=0.1,
-        affine=True,
-        track_running_stats=True,
-        **kwargs
-    ):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True,
+                 track_running_stats=True, **kwargs):
         """
         Initializes the ComplexBatchNorm2d layer.
 
@@ -465,22 +398,8 @@ class ComplexBatchNorm2d(nn.Module):
         """
         super().__init__()
         # Initialize batch normalization layers for real and imaginary parts
-        self.bn_re = nn.BatchNorm2d(
-            num_features=num_features,
-            momentum=momentum,
-            affine=affine,
-            eps=eps,
-            track_running_stats=track_running_stats,
-            **kwargs
-        )
-        self.bn_im = nn.BatchNorm2d(
-            num_features=num_features,
-            momentum=momentum,
-            affine=affine,
-            eps=eps,
-            track_running_stats=track_running_stats,
-            **kwargs
-        )
+        self.bn_re = nn.BatchNorm2d(num_features=num_features, momentum=momentum, affine=affine, eps=eps, track_running_stats=track_running_stats, **kwargs)
+        self.bn_im = nn.BatchNorm2d(num_features=num_features, momentum=momentum, affine=affine, eps=eps, track_running_stats=track_running_stats, **kwargs)
 
     def forward(self, x):
         """
